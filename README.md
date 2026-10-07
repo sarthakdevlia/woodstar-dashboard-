@@ -58,13 +58,13 @@ clinic API and the Delta Designs dashboard already there, a third free service c
 Render then suspends *all* of them. Either put this service on a paid instance, or host it in a
 workspace of WoodStar's own.
 
-1. **Database** — create a database named `woodstar` (on the existing Postgres instance, or a new
-   one). Its internal URL is the instance's internal URL with `/woodstar` as the last part. Never
-   point this app at another business's database.
+1. **Database** — nothing to do by hand. `DATABASE_URL` (step 3) names a database `woodstar` on the
+   Postgres instance, and the app creates it itself the first time it starts (`ensure_database`).
+   Never point this app at another business's database.
 2. **Web service** — New → Web Service → this repo, branch `main`:
-   - Runtime: Python · Health check path: `/healthz`
+   - Runtime: Python · same region as the database · Health check path: `/healthz`
    - Build command: `pip install -r requirements.txt && python manage.py collectstatic --noinput`
-   - Start command: `python manage.py migrate --noinput && python manage.py bootstrap_owner && gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile -`
+   - Start command: `python manage.py ensure_database && python manage.py migrate --noinput && python manage.py bootstrap_owner && gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile -`
    - One worker on purpose: the login lockout counter lives in memory.
 3. **Environment variables**
 
@@ -72,7 +72,7 @@ workspace of WoodStar's own.
    |---|---|
    | `DJANGO_SECRET_KEY` | long random string (Render → Generate) |
    | `ALLOWED_HOSTS` | the dashboard's domain, e.g. `dashboard.example.in` |
-   | `DATABASE_URL` | internal URL ending in `/woodstar` |
+   | `DATABASE_URL` | the instance's **Internal** Database URL with its last part changed to `/woodstar` |
    | `OWNER_USERNAME` / `OWNER_NAME` / `OWNER_PASSWORD` | the owner's first login |
    | `PYTHON_VERSION` | `3.12.10` |
    | `FIRST_JOB_NUMBER` | optional; the first job card's number (default `1001`) |
