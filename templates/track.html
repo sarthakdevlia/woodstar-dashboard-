@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Order {{ job.code }}{% endblock %}
+{% block body %}
+<main class="trackpage">
+  <div class="phone">
+    <div class="phone__head">
+      <div class="logo">{% include "_mark.html" %}<b>WoodStar</b><small>PLY · LAM</small></div>
+      <p style="margin:14px 0 2px;color:#cbbfb1;font-size:12.5px">Job card {{ job.code }}</p>
+      <h1 style="margin:0;font-size:22px">{% if complete %}Delivered ✓{% else %}{{ status }}{% endif %}</h1>
+      <p style="margin:4px 0 0;color:#cbbfb1;font-size:13px">
+        {% if complete %}Thank you for buying from WoodStar.{% else %}Next: {{ next }} · promised by {{ job.due|date:"D, j M" }}{% endif %}
+      </p>
+    </div>
+    <div class="phone__body">
+      <p style="margin:0">Namaste <b>{{ job.customer_name }}</b>,</p>
+      <ul class="tl">
+        {% for step in steps %}
+        <li class="{% if step.state == 'done' %}done{% elif step.state == 'now' %}now{% endif %}"><i></i><b>{{ step.label }}</b>
+          <span>{% if step.state == 'done' %}{{ step.said }} · {{ step.at|date:"j M, g:i a" }}{% elif step.state == 'now' %}In progress{% else %}Coming up{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+      <div style="border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><span class="tag">Your order</span>
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:13px">{% for line in lines %}<li>{{ line }}</li>{% endfor %}</ul>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <a class="btn btn--dark btn--sm" href="tel:+{{ shop.whatsapp }}">Call WoodStar</a>
+        <a class="btn btn--wa btn--sm" href="https://wa.me/{{ shop.whatsapp }}?text=Hi%2C%20about%20job%20card%20{{ job.code }}" target="_blank" rel="noopener">WhatsApp</a>
+      </div>
+      <p class="muted" style="font-size:11.5px;margin:14px 0 0">{{ shop.address }}</p>
+    </div>
+  </div>
+  <p class="foot">This page always shows the latest status. Pull down to refresh.</p>
+</main>
+{% endblock %}

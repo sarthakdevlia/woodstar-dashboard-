@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<main class="login">
+  <div class="login__card">
+    <div class="login__head">
+      <div class="logo">{% include "_mark.html" %}<b>WoodStar</b></div>
+      <p>JOB CARDS</p>
+    </div>
+    <form class="login__body" method="post" novalidate>
+      {% csrf_token %}
+      {% if locked_out %}
+        <div class="errors" role="alert">Too many failed attempts. Try again in 15 minutes.</div>
+      {% elif form.errors %}
+        <div class="errors" role="alert">That username and password don't match. Ask the owner if you've forgotten yours.</div>
+      {% endif %}
+      <label class="f">Username
+        <input id="id_username" name="username" autocomplete="username" autocapitalize="none" required autofocus value="{{ form.username.value|default:'' }}">
+      </label>
+      <label class="f">Password
+        <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn btn--gold" type="submit">Sign in</button>
+      <small>Accounts are created by the owner.</small>
+    </form>
+  </div>
+</main>
+{% endblock %}

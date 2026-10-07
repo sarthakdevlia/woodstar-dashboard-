@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load static %}
+{% block body %}
+<header class="top">
+  <a class="logo" href="#board">{% include "_mark.html" %}<b>WoodStar</b><small>JOB CARDS</small></a>
+  <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Search job no., customer or phone"></div>
+  <div class="grow"></div>
+  <div class="who">
+    <span>Signed in as <b>{{ user.name }}</b> · <span id="who-duty">{{ user.title }}</span></span>
+    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn--sm" type="submit">Sign out</button></form>
+  </div>
+</header>
+<nav class="nav" id="nav"></nav>
+<main id="app"><div class="loading">Loading job cards…</div></main>
+<div class="print-card" id="print"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+{{ bootstrap|json_script:"bootstrap" }}
+<script src="{% static 'js/app.js' %}"></script>
+{% endblock %}

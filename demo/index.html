@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WoodStar Job Cards</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1a1512">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+<style>
+/* ------------------------------------------------------------------
+   WoodStar Ply Lam — job card dashboard (clickable demo).
+   Every order is a job card that moves through five steps; each day
+   the owner gives every worker a duty, each worker ticks the steps of
+   their duty, and the customer follows the card from a link.
+   Data lives in this browser (localStorage) until the hosted version
+   replaces it; WhatsApp sends are previewed here and go out as
+   approved templates once hosted (same system as the clinic side).
+------------------------------------------------------------------- */
+:root{
+  --ink:#1c1714; --ink-2:#4a423b; --ink-3:#8a7f74;
+  --bg:#f4f1ec; --surface:#fff; --surface-2:#faf8f5; --line:#e6e0d8; --line-2:#d6cec3;
+  --brand:#1a1512; --gold:#b8914e; --gold-2:#e7cf97;
+  --gold-grad:linear-gradient(100deg,#9c7a3c,#f0d99a 40%,#b8914e 70%,#e7cf97);
+  --ok:#2f7d4f; --ok-bg:#e8f4ec; --warn:#b26a00; --warn-bg:#fff4e0; --bad:#b3261e; --bad-bg:#fdecea; --info:#2f5f8a; --info-bg:#e9f1f8;
+  --wa:#1f8f4e; --r:14px; --sans:'Manrope', system-ui, sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.5 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:clip}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:inherit}
+.logo{display:flex;align-items:baseline;gap:8px;text-decoration:none}
+.logo b{font:italic 500 26px/1 'Cormorant Garamond',serif;background:var(--gold-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.logo small{font-size:10px;letter-spacing:.28em;color:#a8998a}
+
+.top{position:sticky;top:0;z-index:20;background:var(--brand);color:#f3ede4;display:flex;align-items:center;gap:18px;padding:12px 22px;flex-wrap:wrap}
+.top .grow{flex:1}
+.search{position:relative;min-width:240px;flex:0 1 340px}
+.search input{width:100%;background:#2a221d;border:1px solid #3a302a;border-radius:10px;padding:9px 12px 9px 34px;color:#f3ede4}
+.search input::placeholder{color:#8f8173}
+.search svg{position:absolute;left:10px;top:50%;translate:0 -50%;width:16px;opacity:.6}
+.role{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#cbbfb1}
+.role select{background:#2a221d;border:1px solid #3a302a;border-radius:10px;padding:8px 10px;color:#f3ede4;max-width:60vw}
+.nav{display:flex;gap:4px;padding:10px 22px;background:#fff;border-bottom:1px solid var(--line);overflow-x:auto;position:sticky;top:58px;z-index:19}
+.nav button{border:0;background:none;padding:9px 14px;border-radius:9px;font-weight:600;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.nav button.on{background:var(--brand);color:#f3ede4}
+.nav button:not(.on):hover{background:var(--surface-2)}
+.nav .sp{flex:1}
+main{max-width:1360px;margin:0 auto;padding:22px}
+
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-2);background:#fff;border-radius:10px;padding:9px 14px;font-weight:650;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:var(--ink-3)}
+.btn--dark{background:var(--brand);color:#f3ede4;border-color:var(--brand)}
+.btn--gold{background:var(--gold-grad);color:#231a0e;border-color:transparent}
+.btn--wa{background:var(--wa);color:#fff;border-color:var(--wa)}
+.btn--ghost{border-color:transparent;background:none}
+.btn--sm{padding:6px 10px;font-size:12.5px;border-radius:8px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.h1{font-size:22px;font-weight:800;letter-spacing:-.02em;margin:0}
+.sub{color:var(--ink-3);margin:2px 0 0}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok);border-color:#bfe0cb}
+.pill.warn{background:var(--warn-bg);color:var(--warn);border-color:#f3d7a6}
+.pill.bad{background:var(--bad-bg);color:var(--bad);border-color:#f3c3be}
+.pill.info{background:var(--info-bg);color:var(--info);border-color:#c5d9ea}
+.muted{color:var(--ink-3)}
+.mono{font-variant-numeric:tabular-nums}
+.tag{font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.note{background:var(--info-bg);border:1px solid #c5d9ea;color:#274d70;border-radius:12px;padding:10px 14px;font-size:13px}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+.kpi{padding:16px 18px}
+.kpi b{display:block;font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.1;margin-top:4px}
+.kpi small{color:var(--ink-3)}
+
+.board{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
+.col{background:#ebe6df;border-radius:var(--r);padding:10px;min-height:300px}
+.col h3{margin:2px 4px 10px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center}
+.col h3 span{font-weight:600;color:var(--ink-3)}
+.jc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:8px;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.jc:hover{transform:translateY(-2px);box-shadow:0 8px 20px -12px rgba(0,0,0,.35)}
+.jc.mine{border-color:var(--gold);box-shadow:0 0 0 3px rgba(184,145,78,.14)}
+.jc .no{font-size:11.5px;font-weight:800;color:var(--gold)}
+.jc .nm{font-weight:700;margin:2px 0}
+.jc .it{font-size:12px;color:var(--ink-2);line-height:1.35}
+.jc .nx{font-size:11.5px;margin-top:7px;color:var(--ink-2)}
+.jc .ft{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11.5px;color:var(--ink-3)}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);font-weight:800}
+td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--surface-2)}
+.prog{display:flex;gap:3px}
+.prog i{width:18px;height:6px;border-radius:3px;background:var(--line)}
+.prog i.on{background:var(--ok)}
+
+.detail{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;margin-top:16px}
+.detail>*{min-width:0}
+.stages{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.pstage{border:1.5px solid var(--line-2);border-radius:12px;padding:11px;background:#fff;display:flex;flex-direction:column;min-height:132px}
+.pstage.done{background:var(--ok-bg);border-color:var(--ok)}
+.pstage.next{border-color:var(--gold);box-shadow:0 0 0 3px rgba(184,145,78,.15)}
+.pstage .nm{font-size:11.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.pstage .team{font-size:11px;color:var(--ink-3)}
+.pstage .who{font-size:11px;color:var(--ink-2);margin:8px 0;line-height:1.35;flex:1}
+.pstage .btn{justify-content:center}
+.items td:first-child{font-weight:700}
+.audit{list-style:none;margin:0;padding:0}
+.audit li{padding:9px 0;border-bottom:1px dashed var(--line);font-size:13px;display:flex;justify-content:space-between;gap:10px}
+.audit li span:last-child{color:var(--ink-3);white-space:nowrap;font-size:12px}
+.sec{padding:16px 18px}
+.sec + .sec{border-top:1px solid var(--line)}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:6px 12px;font-size:13.5px}
+.kv dt{color:var(--ink-3)}
+.kv dd{margin:0;font-weight:600}
+
+.form{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:700;color:var(--ink-2)}
+label.f input,label.f select,label.f textarea,.line input,.line select,.in{border:1px solid var(--line-2);border-radius:10px;padding:10px 12px;background:#fff;font-weight:500;width:100%}
+label.f input:focus,label.f select:focus,label.f textarea:focus,.line input:focus,.in:focus{outline:2px solid var(--gold-2);border-color:var(--gold)}
+.err{color:var(--bad);font-size:12px;font-weight:600;min-height:16px}
+.catbar{display:flex;gap:8px;flex-wrap:wrap}
+.catbtn{border:1.5px dashed var(--line-2);background:#fff;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer}
+.catbtn:hover{border-color:var(--gold);color:#7a5a22;background:#fffaf0}
+.line{display:grid;grid-template-columns:130px repeat(4,1fr) 40px;gap:8px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);margin-top:10px}
+.line .cat{font-weight:800;font-size:13px;padding-bottom:10px}
+.line .cat small{display:block;font-weight:600;color:var(--ink-3);font-size:11px}
+.line label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:700;color:var(--ink-3)}
+.line .x{border:0;background:none;font-size:20px;color:var(--ink-3);cursor:pointer;padding-bottom:8px}
+.qty{display:flex;gap:6px;align-items:center}
+.qty span{font-size:12px;color:var(--ink-3)}
+
+/* today's team */
+.team{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;margin-top:16px}
+.wk{display:flex;flex-direction:column}
+.wk__head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.wk__name{font-size:17px;font-weight:800}
+.duties{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.duty{border:1.5px solid var(--line-2);background:#fff;border-radius:99px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}
+.duty.on{background:var(--brand);color:#f3ede4;border-color:var(--brand)}
+.duty[disabled]{cursor:default;opacity:.85}
+.worklist{list-style:none;margin:10px 0 0;padding:0;font-size:13px}
+.worklist li{padding:7px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;gap:8px}
+.bubble{background:#e7f6dc;border-radius:4px 14px 14px 14px;padding:10px 12px;font-size:13px;line-height:1.45;white-space:pre-wrap;margin-top:10px;position:relative;color:#16240f}
+.bubble small{display:block;text-align:right;color:#5c7350;font-size:10.5px;margin-top:4px}
+
+/* templates */
+.tpl{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+.blanks{display:flex;flex-wrap:wrap;gap:6px}
+.blank{font:600 12px/1 ui-monospace,Menlo,monospace;background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;padding:5px 8px;cursor:pointer}
+.tabs{display:inline-flex;border:1px solid var(--line-2);border-radius:10px;overflow:hidden}
+.tabs button{border:0;background:#fff;padding:7px 14px;font-weight:700;cursor:pointer}
+.tabs button.on{background:var(--brand);color:#f3ede4}
+
+.phone{max-width:420px;margin:10px auto;background:#fff;border:1px solid var(--line);border-radius:28px;overflow:hidden;box-shadow:0 30px 60px -30px rgba(0,0,0,.35)}
+.phone__head{background:var(--brand);color:#f3ede4;padding:20px 22px}
+.phone__body{padding:20px 22px}
+.tl{list-style:none;margin:16px 0 0;padding:0}
+.tl li{position:relative;padding:0 0 18px 30px}
+.tl li::before{content:"";position:absolute;left:8px;top:18px;bottom:0;width:2px;background:var(--line)}
+.tl li:last-child::before{display:none}
+.tl li i{position:absolute;left:0;top:3px;width:18px;height:18px;border-radius:50%;border:2px solid var(--line-2);background:#fff}
+.tl li.done i{background:var(--ok);border-color:var(--ok)}
+.tl li.done i::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.tl li.now i{border-color:var(--gold);box-shadow:0 0 0 4px rgba(184,145,78,.2)}
+.tl li b{display:block;font-size:14px}
+.tl li span{font-size:12.5px;color:var(--ink-3)}
+
+#toast{position:fixed;left:50%;bottom:24px;translate:-50% 20px;opacity:0;background:var(--brand);color:#f3ede4;padding:11px 18px;border-radius:12px;font-weight:600;transition:.3s;z-index:50;max-width:90vw}
+#toast.show{opacity:1;translate:-50% 0}
+#toast.bad{background:var(--bad)}
+
+.print-card{display:none}
+@media print{
+  body{background:#fff}
+  .top,.nav,main > *:not(.print-card),#toast{display:none!important}
+  .print-card{display:block;padding:10mm}
+}
+.pc{border:1.5px solid #000;padding:14px;font-size:12px}
+.pc h2{margin:0;font-size:18px}
+.pc table td,.pc table th{padding:6px;border:1px solid #999;font-size:12px}
+
+@media (max-width:980px){
+  .kpis{grid-template-columns:1fr 1fr}
+  .detail,.tpl{grid-template-columns:1fr}
+  .stages{grid-template-columns:repeat(2,1fr)}
+  .form{grid-template-columns:1fr}
+  .line{grid-template-columns:1fr 1fr}
+  .line .cat{grid-column:1/-1;padding:0}
+  .search{flex:1 1 100%;order:3}
+  .top{position:static}
+  .nav{top:0}
+  main{padding:16px}
+  .team{grid-template-columns:1fr}
+}
+.customer .top,.customer .nav{display:none}
+.customer #app{padding-top:22px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="logo" href="#board"><b>WoodStar</b><small>JOB CARDS</small></a>
+  <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Search job no., customer or phone"></div>
+  <div class="grow"></div>
+  <label class="role">Signed in as <select id="role"></select></label>
+</header>
+<nav class="nav" id="nav"></nav>
+<main id="app"></main>
+<div class="print-card" id="print"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+/* ================================================================
+   Set-up — categories, their fields, and the five steps every order
+   goes through. Edit these lists to match the shop.
+================================================================= */
+const CATEGORIES = [
+  {key:'laminate', label:'Laminate', fields:['brand','thickness','qty'], unit:'sheets',
+   brand:['Greenlam','Century Laminates','Hilaxe','Emporio','Eight Four','Green Touch','Glorio'],
+   thickness:['0.8 mm','1.0 mm','1.25 mm']},
+  {key:'adhesive', label:'Adhesive', fields:['brand','pack','qty'], unit:'packs',
+   brand:['Fevicol SR','Fevicol HeatX','Jivanjor','Other'], pack:['1 kg','5 kg','10 kg','20 kg','50 kg']},
+  {key:'ply', label:'Plywood', fields:['brand','thickness','size','qty'], unit:'sheets',
+   brand:['Austin Marine','Murphy','Excelent','Greenply','Duroply','Greenpanel'],
+   thickness:['4 mm','6 mm','9 mm','12 mm','16 mm','19 mm','25 mm'], size:['8 × 4 ft','7 × 4 ft','8 × 3 ft','7 × 3 ft','6 × 4 ft','6 × 3 ft']},
+  {key:'louver', label:'Louvers', fields:['brand','size','qty'], unit:'pcs',
+   brand:['Zurich','Other'], size:['9.5 ft × 5 in','9.5 ft × 6 in','10 ft × 5 in','10 ft × 6 in']},
+  {key:'veneer', label:'Veneers', fields:['thickness','size','qty'], unit:'sheets',
+   thickness:['0.5 mm','3.5 mm','4 mm'], size:['8 × 4 ft','7 × 4 ft','8 × 3 ft']},
+  {key:'door', label:'Doors', fields:['thickness','size','qty'], unit:'pcs',
+   thickness:['30 mm','32 mm','35 mm'], size:['7 × 3 ft','7 × 2.5 ft','6.5 × 3 ft','6.5 × 2.5 ft']},
+];
+const FIELD_LABEL = {brand:'Brand', thickness:'Thickness', size:'Size', pack:'Pack size', qty:'Quantity'};
+
+// The steps, as WoodStar runs them. `duty` is what the worker doing it is told.
+const STAGES = [
+  {key:'received',  label:'Order received',    said:'We have received your order',            duty:'Take orders at the counter',        dutyHi:'काउंटर पर ऑर्डर लेना'},
+  {key:'ordered',   label:'Material ordered',  said:'Your material has been ordered',         duty:'Order material from suppliers',     dutyHi:'सप्लायर से माल ऑर्डर करना'},
+  {key:'arrived',   label:'Material received', said:'Your material has reached our godown',   duty:'Receive and check incoming material', dutyHi:'आया हुआ माल लेना और जाँचना'},
+  {key:'dispatch',  label:'Dispatch',          said:'Your order has left our godown',         duty:'Load and dispatch orders',          dutyHi:'ऑर्डर लोड करके भेजना'},
+  {key:'delivered', label:'Delivered',         said:'Your order has been delivered',          duty:'Deliver and get it signed',         dutyHi:'डिलीवरी देना और साइन लेना'},
+];
+const SHOP = {name:'WoodStar Ply Lam', owner:'Piyush', phone:'+91 99833 86101', address:'90-A, New Grain Mandi, Furniture Industrial Area, Main Road, Kota'};
+
+/* WhatsApp wording, built like the clinic-side templates: named blanks,
+   a live preview, checked before it can go for approval. A worker or a
+   customer who hasn't written in the last 24 hours can only be sent a
+   message WhatsApp approved in advance — so these are templates. */
+const TEMPLATE_DEFAULTS = {
+  work: {
+    title:"Worker's daily work", to:'Each worker, every morning',
+    blanks:['name','date','duty','jobs','shop'], required:['duty','jobs'],
+    en:'Namaste {name}, your work at {shop} for {date}: {duty}. Job cards waiting for you: {jobs}. Tick each one on the dashboard when it is done.',
+    hi:'नमस्ते {name}, {date} को {shop} में आपका काम: {duty}। आपके जॉब कार्ड: {jobs}। काम पूरा होने पर डैशबोर्ड पर टिक करें।',
+  },
+  update: {
+    title:'Order update to the customer', to:'The customer, at every step',
+    blanks:['name','job','status','link','shop'], required:['job','status'],
+    en:'Namaste {name}, your order {job} at {shop} is now: {status}. Track it any time: {link} Thank you.',
+    hi:'नमस्ते {name}, {shop} में आपका ऑर्डर {job} अब इस स्थिति में है: {status}। यहाँ देखें: {link} धन्यवाद।',
+  },
+};
+
+/* ================================================================
+   Data — kept in this browser until the hosted version exists
+================================================================= */
+const KEY = 'woodstar.jobcards.v2';
+const now = () => new Date().toISOString();
+const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function seed(){
+  const workers = [
+    {id:'w1', name:'Aman',   phone:'9829011111', lang:'en'},
+    {id:'w2', name:'Ramesh', phone:'9829022222', lang:'hi'},
+    {id:'w3', name:'Salim',  phone:'9829033333', lang:'hi'},
+    {id:'w4', name:'Vijay',  phone:'9829044444', lang:'hi'},
+  ];
+  const byStage = {received:'Aman', ordered:'Ramesh', arrived:'Salim', dispatch:'Vijay', delivered:'Vijay'};
+  const mk = (no, name, phone, site, contractor, mode, dueIn, items, amount, advance, hoursAgo) => {
+    const stages = {}, log = [];
+    STAGES.forEach((s, i) => {
+      if (i < hoursAgo.length) { const at = ago(hoursAgo[i]), by = byStage[s.key]; stages[s.key] = {by, at}; log.push({at, txt:`${by} marked ${s.label}`}); }
+      else stages[s.key] = null;
+    });
+    return {no, customer:{name, phone}, site, contractor, mode, due:new Date(Date.now() + dueIn * 864e5).toISOString().slice(0, 10),
+            items, amount, advance, stages, log, createdAt:stages.received.at};
+  };
+  const it = (cat, o) => Object.assign({cat}, o);
+  const jobs = [
+    mk('WS-1041','Rajesh Meena','9829012345','Kunhadi — new house','Mohan (carpenter)','Delivery',1,
+      [it('ply',{brand:'Austin Marine',thickness:'19 mm',size:'8 × 4 ft',qty:24}), it('laminate',{brand:'Greenlam',thickness:'1.0 mm',qty:30}), it('adhesive',{brand:'Fevicol SR',pack:'20 kg',qty:2})],
+      118400, 50000, [52, 49, 30, 6]),
+    mk('WS-1042','Sharma Interiors','9414523456','Talwandi — office fit-out','','Delivery',2,
+      [it('ply',{brand:'Murphy',thickness:'19 mm',size:'8 × 4 ft',qty:40}), it('louver',{brand:'Zurich',size:'9.5 ft × 5 in',qty:36})],
+      212000, 100000, [30, 22, 5]),
+    mk('WS-1043','Kavita Jain','9660034567','Vigyan Nagar — kitchen','Anil (carpenter)','Pickup',0,
+      [it('laminate',{brand:'Century Laminates',thickness:'1.0 mm',qty:14}), it('ply',{brand:'Excelent',thickness:'12 mm',size:'8 × 4 ft',qty:10})],
+      46200, 46200, [20, 16, 9]),
+    mk('WS-1044','Anand Builders','9829567812','Borkhera — 12 flats','','Delivery',5,
+      [it('door',{thickness:'32 mm',size:'7 × 3 ft',qty:48}), it('ply',{brand:'Excelent',thickness:'19 mm',size:'8 × 4 ft',qty:60})],
+      486000, 150000, [8, 6]),
+    mk('WS-1045','Priya Agarwal','9887123450','Mahaveer Nagar — wardrobe','Mohan (carpenter)','Pickup',1,
+      [it('veneer',{thickness:'4 mm',size:'8 × 4 ft',qty:8}), it('laminate',{brand:'Hilaxe',thickness:'0.8 mm',qty:6}), it('adhesive',{brand:'Fevicol HeatX',pack:'5 kg',qty:1})],
+      38900, 20000, [5, 2]),
+    mk('WS-1046','Suresh Kumawat','9950011223','Rangbari — TV unit','','Pickup',3,
+      [it('louver',{brand:'Zurich',size:'10 ft × 6 in',qty:12}), it('laminate',{brand:'Emporio',thickness:'1.0 mm',qty:4})],
+      21600, 5000, [3]),
+    mk('WS-1047','Verma Furnitures','9413345566','Workshop order','','Delivery',0,
+      [it('ply',{brand:'Austin Marine',thickness:'9 mm',size:'8 × 4 ft',qty:30}), it('ply',{brand:'Murphy',thickness:'6 mm',size:'8 × 4 ft',qty:20})],
+      96500, 96500, [70, 66, 50, 30, 20]),
+    mk('WS-1048','Nikhil Gupta','9785566778','Dadabari — main door','','Pickup',2,
+      [it('door',{thickness:'35 mm',size:'7 × 3 ft',qty:1}), it('veneer',{thickness:'0.5 mm',size:'8 × 4 ft',qty:2})],
+      18400, 0, [1]),
+  ];
+  // today's duties: three or four people, each with their own work
+  const roster = {[todayKey()]: {w1:['received'], w2:['ordered'], w3:['arrived'], w4:['dispatch','delivered']}};
+  return {jobs, workers, roster, sent:{}, templates:{work:{en:TEMPLATE_DEFAULTS.work.en, hi:TEMPLATE_DEFAULTS.work.hi}, update:{en:TEMPLATE_DEFAULTS.update.en, hi:TEMPLATE_DEFAULTS.update.hi}}};
+}
+let DB;
+try { DB = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch (e) { DB = seed(); }
+if (!DB.roster[todayKey()]) {     // a new day starts with yesterday's duties, ready to change
+  const days = Object.keys(DB.roster).sort(); DB.roster[todayKey()] = JSON.parse(JSON.stringify(DB.roster[days[days.length - 1]] || {}));
+}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) {} };
+save();
+
+/* ================================================================
+   Helpers
+================================================================= */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const cat = k => CATEGORIES.find(c => c.key === k);
+const stage = k => STAGES.find(s => s.key === k);
+const doneCount = j => STAGES.filter(s => j.stages[s.key]).length;
+const nextStage = j => STAGES.find(s => !j.stages[s.key]);                       // the step it is waiting for
+const statusOf = j => STAGES[Math.max(0, doneCount(j) - 1)];                     // the step it has reached
+const rupees = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+const phoneFmt = p => p ? `+91 ${p.slice(0, 5)} ${p.slice(5)}` : '';
+const dayLabel = iso => new Date(iso).toLocaleDateString('en-IN', {weekday:'long', day:'numeric', month:'long'});
+function when(iso){
+  const d = new Date(iso), diff = (Date.now() - d) / 36e5;
+  const t = d.toLocaleTimeString('en-IN', {hour:'numeric', minute:'2-digit'});
+  if (diff < 24 && d.getDate() === new Date().getDate()) return `Today, ${t}`;
+  if (diff < 48) return `Yesterday, ${t}`;
+  return d.toLocaleDateString('en-IN', {day:'numeric', month:'short'}) + ', ' + t;
+}
+const itemLine = i => { const c = cat(i.cat); return `${c.label}: ` + c.fields.filter(f => f !== 'qty').map(f => i[f]).filter(Boolean).join(' · ') + ` × ${i.qty} ${c.unit}`; };
+const itemsShort = j => j.items.map(i => `${cat(i.cat).label} ${i.thickness || i.size || i.pack || ''} × ${i.qty}`).join(', ');
+function toast(msg, bad){ const t = $('#toast'); t.textContent = msg; t.className = 'show' + (bad ? ' bad' : ''); clearTimeout(t._h); t._h = setTimeout(() => t.className = '', 3600); }
+/* The tracking link carries the order's status inside it, so it opens on the customer's own phone
+   with nothing stored on a server. It shows the status as it was when the link was sent. */
+const pack = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unpack = t => JSON.parse(decodeURIComponent(escape(atob(t.replace(/-/g, '+').replace(/_/g, '/')))));
+const snapshot = j => ({n:j.no, c:j.customer.name, d:j.due, t:Date.now(), s:STAGES.map(st => j.stages[st.key] ? +new Date(j.stages[st.key].at) : 0), i:j.items});
+const fromSnapshot = o => ({no:o.n, customer:{name:o.c}, due:o.d, asOf:o.t, items:o.i,
+  stages:Object.fromEntries(STAGES.map((st, k) => [st.key, o.s[k] ? {at:new Date(o.s[k]).toISOString()} : null]).filter(([, v]) => v))});
+const trackUrl = j => `${location.href.split('#')[0]}#t/${pack(snapshot(j))}`;
+const fill = (text, values) => text.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
+
+/* who is signed in, and what they may tick today */
+const state = {view:'board', job:null, snap:null, badLink:false, who:'owner', q:'', draft:null, tplLang:{work:'en', update:'en'}};
+const isOwner = () => state.who === 'owner';
+const me = () => isOwner() ? {name:SHOP.owner} : DB.workers.find(w => w.id === state.who);
+const duties = id => (DB.roster[todayKey()] || {})[id] || [];
+const myDuties = () => isOwner() ? STAGES.map(s => s.key) : duties(state.who);
+const onDuty = key => DB.workers.filter(w => duties(w.id).includes(key));
+const waitingFor = keys => DB.jobs.filter(j => { const n = nextStage(j); return n && keys.includes(n.key); });
+
+function customerMessage(j){
+  return fill(DB.templates.update.en, {name:j.customer.name, job:j.no, status:statusOf(j).label, link:trackUrl(j), shop:SHOP.name});
+}
+const waCustomer = j => `https://wa.me/91${j.customer.phone}?text=${encodeURIComponent(customerMessage(j))}`;
+function workMessage(w){
+  const d = duties(w.id), hi = w.lang === 'hi';
+  // one line each: a template blank cannot hold line breaks
+  const duty = d.map(k => hi ? stage(k).dutyHi : stage(k).duty).join(hi ? ' और ' : ' and ') || (hi ? 'आज कोई काम नहीं दिया गया' : 'no duty set for today');
+  const jobs = waitingFor(d.filter(k => k !== 'received')).map(j => `${j.no} ${j.customer.name}`).join('; ') || (hi ? 'अभी कोई नहीं' : 'none yet');
+  return fill(DB.templates.work[w.lang] || DB.templates.work.en, {name:w.name, date:new Date().toLocaleDateString(hi ? 'hi-IN' : 'en-IN', {day:'numeric', month:'long'}), duty, jobs, shop:SHOP.name});
+}
+
+/* ================================================================
+   Rules
+   - a worker ticks only the steps of the duty they were given today
+   - steps go in order
+   - only the owner un-ticks, changes duties, and sees money
+================================================================= */
+function can(j, key){
+  const idx = STAGES.findIndex(s => s.key === key), st = STAGES[idx], done = !!j.stages[key];
+  if (!myDuties().includes(key)) { const who = onDuty(key).map(w => w.name).join(' or '); return {ok:false, msg:`"${st.label}" is ${who ? who + "'s" : "nobody's"} duty today, not yours.`}; }
+  if (done && !isOwner()) return {ok:false, msg:'Only the owner can undo a completed step.'};
+  if (!done && idx > 0 && !j.stages[STAGES[idx - 1].key]) return {ok:false, msg:`"${STAGES[idx - 1].label}" has to be done first.`};
+  if (done && STAGES.slice(idx + 1).some(s => j.stages[s.key])) return {ok:false, msg:'Undo the later steps first.'};
+  return {ok:true};
+}
+function toggle(j, key){
+  const v = can(j, key); if (!v.ok) return toast(v.msg, true);
+  const st = stage(key), by = me().name;
+  if (j.stages[key]) { j.stages[key] = null; j.log.push({at:now(), txt:`${by} undid ${st.label}`}); toast(`${st.label} undone`); }
+  else { j.stages[key] = {by, at:now()}; j.log.push({at:now(), txt:`${by} marked ${st.label}`}); toast(`${j.no}: ${st.label} ✓ — the customer's tracking page is updated`); }
+  save(); render();
+}
+
+/* ================================================================
+   Views
+================================================================= */
+const VIEWS = [
+  {k:'board', t:'Floor board'}, {k:'list', t:'All job cards'}, {k:'new', t:'+ New job card'}, {k:'team', t:"Today's team"}, {k:'messages', t:'WhatsApp messages'}, {k:'track', t:'Customer view'},
+];
+function nav(){
+  $('#nav').innerHTML = VIEWS.map(v => `<button data-view="${v.k}" class="${state.view === v.k || (v.k === 'list' && state.view === 'job') ? 'on' : ''}">${v.t}</button>`).join('') +
+    `<span class="sp"></span><button data-reset>Reset demo data</button>`;
+  const sel = $('#role'), cur = state.who;
+  sel.innerHTML = `<option value="owner">${SHOP.owner} — Owner</option>` + DB.workers.map(w => `<option value="${w.id}">${esc(w.name)} — ${duties(w.id).map(k => stage(k).label).join(' + ') || 'no duty today'}</option>`).join('');
+  sel.value = DB.workers.some(w => w.id === cur) ? cur : 'owner'; state.who = sel.value;
+}
+function go(view, job){ state.view = view; state.job = job || null; location.hash = job ? `${view}/${job}` : view; render(); scrollTo(0, 0); }
+function filtered(){
+  const q = state.q.trim().toLowerCase();
+  return q ? DB.jobs.filter(j => [j.no, j.customer.name, j.customer.phone, j.site].join(' ').toLowerCase().includes(q)) : DB.jobs;
+}
+
+function viewBoard(){
+  const jobs = filtered(), mine = myDuties();
+  const open = jobs.filter(j => doneCount(j) < STAGES.length);
+  const awaiting = jobs.filter(j => j.stages.ordered && !j.stages.arrived);
+  const ready = jobs.filter(j => j.stages.arrived && !j.stages.dispatch);
+  const late = open.filter(j => new Date(j.due) < new Date(new Date().toDateString()));
+  const due = jobs.reduce((a, j) => a + Math.max(0, (j.amount || 0) - (j.advance || 0)), 0);
+  const cols = STAGES.map(s => {
+    const here = jobs.filter(j => statusOf(j).key === s.key).sort((a, b) => a.no.localeCompare(b.no));   // a card sits in the step it has reached
+    return `<div class="col"><h3>${esc(s.label)} <span>${here.length}</span></h3>
+      ${here.map(j => cardHTML(j, mine)).join('') || '<p class="muted" style="font-size:12px;margin:6px 4px">Nothing here.</p>'}</div>`;
+  }).join('');
+  const mineCount = isOwner() ? 0 : waitingFor(mine).length;
+  return `<div class="row between"><div><h1 class="h1">Floor board</h1><p class="sub">${isOwner() ? 'Every order, in the step it has reached. Click a card to open it.'
+      : mine.length ? `Your duty today: <b>${mine.map(k => stage(k).label).join(' and ')}</b>. ${mineCount} card${mineCount === 1 ? ' is' : 's are'} waiting for you (outlined in gold).` : 'You have no duty set for today — ask the owner.'}</p></div>
+    <button class="btn btn--gold" data-view="new">+ New job card</button></div>
+    <div class="kpis">
+      <div class="card kpi"><small>Open job cards</small><b>${open.length}</b></div>
+      <div class="card kpi"><small>Waiting for material to arrive</small><b>${awaiting.length}</b></div>
+      <div class="card kpi"><small>Material in, ready to dispatch</small><b>${ready.length}</b></div>
+      ${isOwner() ? `<div class="card kpi"><small>Balance due (all cards)</small><b class="mono">${rupees(due)}</b></div>` : `<div class="card kpi"><small>Past promised date</small><b>${late.length}</b></div>`}
+    </div>
+    <div class="board">${cols}</div>`;
+}
+function cardHTML(j, mine){
+  const n = nextStage(j), late = n && new Date(j.due) < new Date(new Date().toDateString());
+  const forMe = n && !isOwner() && mine.includes(n.key);
+  return `<div class="jc ${forMe ? 'mine' : ''}" data-open="${j.no}">
+    <div class="no">${j.no}</div><div class="nm">${esc(j.customer.name)}</div>
+    <div class="it">${esc(itemsShort(j))}</div>
+    <div class="nx">${n ? `Next: <b>${esc(n.label)}</b>${onDuty(n.key).length ? ' · ' + esc(onDuty(n.key).map(w => w.name).join(', ')) : ''}` : '<span class="pill ok">Completed</span>'}</div>
+    <div class="ft"><span>${j.mode} · due ${new Date(j.due).toLocaleDateString('en-IN', {day:'numeric', month:'short'})}</span>${late ? '<span class="pill bad">Late</span>' : ''}</div></div>`;
+}
+
+function viewList(){
+  const jobs = filtered().slice().sort((a, b) => b.no.localeCompare(a.no));
+  return `<div class="row between"><div><h1 class="h1">All job cards</h1><p class="sub">${jobs.length} card${jobs.length === 1 ? '' : 's'}${state.q ? ` matching "${esc(state.q)}"` : ''}.</p></div><button class="btn btn--gold" data-view="new">+ New job card</button></div>
+  <div class="card" style="margin-top:16px;overflow-x:auto"><table>
+    <thead><tr><th>Job no.</th><th>Customer</th><th>Items</th><th>Progress</th><th>Now at</th><th>Due</th>${isOwner() ? '<th>Balance</th>' : ''}</tr></thead>
+    <tbody>${jobs.map(j => { const n = doneCount(j), st = statusOf(j);
+      return `<tr class="click" data-open="${j.no}"><td><b>${j.no}</b></td><td><b>${esc(j.customer.name)}</b><br><span class="muted">${phoneFmt(j.customer.phone)}</span></td>
+      <td style="max-width:320px">${esc(itemsShort(j))}</td>
+      <td><div class="prog">${STAGES.map(s => `<i class="${j.stages[s.key] ? 'on' : ''}"></i>`).join('')}</div></td>
+      <td><span class="pill ${n === STAGES.length ? 'ok' : n >= 3 ? 'info' : ''}">${esc(st.label)}</span></td>
+      <td class="mono">${new Date(j.due).toLocaleDateString('en-IN', {day:'numeric', month:'short'})}</td>
+      ${isOwner() ? `<td class="mono">${rupees(Math.max(0, j.amount - j.advance))}</td>` : ''}</tr>`; }).join('') || `<tr><td colspan="7" class="muted">No job cards match.</td></tr>`}</tbody></table></div>`;
+}
+
+function viewJob(){
+  const j = DB.jobs.find(x => x.no === state.job);
+  if (!j) return `<p>Job card not found. <a href="#list" data-view="list">Back to all job cards</a></p>`;
+  const next = nextStage(j);
+  const tiles = STAGES.map(s => {
+    const d = j.stages[s.key], v = can(j, s.key), who = onDuty(s.key).map(w => w.name).join(', ');
+    return `<div class="pstage ${d ? 'done' : ''} ${next && next.key === s.key ? 'next' : ''}">
+      <div class="nm">${esc(s.label)}</div><div class="team">Today: ${esc(who || 'nobody assigned')}</div>
+      <div class="who">${d ? `✓ ${esc(d.by)}<br>${when(d.at)}` : next && next.key === s.key ? 'Waiting for this step' : '—'}</div>
+      <button class="btn btn--sm ${d ? '' : 'btn--dark'}" data-tick="${s.key}" ${v.ok ? '' : 'disabled'} title="${esc(v.ok ? '' : v.msg)}">${d ? 'Undo' : 'Mark done'}</button></div>`;
+  }).join('');
+  const rows = j.items.map(i => { const c = cat(i.cat); return `<tr><td>${c.label}</td><td>${esc(i.brand || '—')}</td><td>${esc(i.thickness || '—')}</td><td>${esc(i.size || i.pack || '—')}</td><td class="mono"><b>${i.qty}</b> ${c.unit}</td></tr>`; }).join('');
+  return `<div class="row between"><div><p class="tag" style="margin:0"><a href="#list" data-view="list" style="text-decoration:none">← All job cards</a></p>
+      <h1 class="h1">${j.no} · ${esc(j.customer.name)}</h1><p class="sub">Received ${when(j.createdAt)} · ${j.mode} · promised ${new Date(j.due).toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'})}</p></div>
+    <div class="row"><a class="btn btn--wa" href="${waCustomer(j)}" target="_blank" rel="noopener">Send update on WhatsApp</a><button class="btn" data-print="${j.no}">Print job card</button><button class="btn" data-trackjob="${j.no}">See what the customer sees</button></div></div>
+  <div class="card sec" style="margin-top:16px"><div class="row between" style="margin-bottom:12px"><b>Process</b><span class="muted" style="font-size:12.5px">Each step is ticked by whoever has that duty today, in order. The customer's tracking page follows every tick.</span></div><div class="stages">${tiles}</div></div>
+  <div class="detail">
+    <div class="card"><div class="sec"><b>Items</b></div><div style="overflow-x:auto"><table class="items"><thead><tr><th>Category</th><th>Brand</th><th>Thickness</th><th>Size / pack</th><th>Quantity</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${j.notes ? `<div class="sec"><span class="tag">Notes</span><p style="margin:6px 0 0">${esc(j.notes)}</p></div>` : ''}
+      <div class="sec"><span class="tag">What the customer is sent</span><div class="bubble">${esc(customerMessage(j))}<small>WhatsApp · order update</small></div></div></div>
+    <div class="card">
+      <div class="sec"><span class="tag">Customer</span><dl class="kv" style="margin:10px 0 0"><dt>Name</dt><dd>${esc(j.customer.name)}</dd><dt>Phone</dt><dd><a href="tel:+91${j.customer.phone}">${phoneFmt(j.customer.phone)}</a></dd>
+        <dt>Site</dt><dd>${esc(j.site || '—')}</dd><dt>Carpenter / ref.</dt><dd>${esc(j.contractor || '—')}</dd></dl></div>
+      ${isOwner() ? `<div class="sec"><span class="tag">Payment (owner only)</span><dl class="kv" style="margin:10px 0 0"><dt>Order value</dt><dd class="mono">${rupees(j.amount)}</dd><dt>Advance</dt><dd class="mono">${rupees(j.advance)}</dd><dt>Balance</dt><dd class="mono">${rupees(Math.max(0, j.amount - j.advance))} ${j.amount - j.advance <= 0 ? '<span class="pill ok">Paid</span>' : ''}</dd></dl></div>` : ''}
+      <div class="sec"><span class="tag">Audit trail</span><ul class="audit">${j.log.slice().reverse().map(l => `<li><span>${esc(l.txt)}</span><span>${when(l.at)}</span></li>`).join('')}</ul></div>
+    </div>
+  </div>`;
+}
+
+/* ---- new job card */
+function blankDraft(){ return {name:'', phone:'', site:'', contractor:'', mode:'Pickup', due:new Date(Date.now() + 864e5).toISOString().slice(0, 10), notes:'', amount:'', advance:'', items:[]}; }
+function viewNew(){
+  if (!myDuties().includes('received')) return `<h1 class="h1">New job card</h1><p class="sub">Job cards are created by whoever has "Order received" as their duty today${onDuty('received').length ? ` (${esc(onDuty('received').map(w => w.name).join(', '))})` : ''}, or by the owner.</p>`;
+  const d = state.draft || (state.draft = blankDraft());
+  const lines = d.items.map((it, i) => { const c = cat(it.cat);
+    return `<div class="line" data-line="${i}"><div class="cat">${c.label}<small>${c.fields.map(f => FIELD_LABEL[f]).join(', ')}</small></div>
+      ${c.fields.map(f => f === 'qty'
+        ? `<label>Quantity<span class="qty"><input type="number" min="1" inputmode="numeric" data-f="qty" value="${esc(it.qty || '')}" placeholder="0"><span>${c.unit}</span></span></label>`
+        : `<label>${FIELD_LABEL[f]}<input list="dl-${c.key}-${f}" data-f="${f}" value="${esc(it[f] || '')}" placeholder="Choose or type"><datalist id="dl-${c.key}-${f}">${c[f].map(b => `<option value="${esc(b)}">`).join('')}</datalist></label>`
+      ).join('')}
+      ${'<span></span>'.repeat(Math.max(0, 4 - c.fields.length))}
+      <button class="x" data-remove="${i}" title="Remove this item">×</button></div>`; }).join('');
+  return `<div class="row between"><div><h1 class="h1">New job card</h1><p class="sub">Fill in the customer, add what they're buying, save — the card goes onto the floor board as "Order received".</p></div></div>
+  <div class="card sec" style="margin-top:16px"><div class="form">
+    <label class="f">Customer name *<input id="f-name" value="${esc(d.name)}" placeholder="e.g. Rajesh Meena" autocomplete="off"><span class="err" id="e-name"></span></label>
+    <label class="f">Phone (WhatsApp) *<input id="f-phone" value="${esc(d.phone)}" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number"><span class="err" id="e-phone"></span></label>
+    <label class="f">Site / purpose<input id="f-site" value="${esc(d.site)}" placeholder="e.g. Kunhadi — kitchen"></label>
+    <label class="f">Carpenter / reference<input id="f-contractor" value="${esc(d.contractor)}" placeholder="optional"></label>
+    <label class="f">Pickup or delivery<select id="f-mode">${['Pickup', 'Delivery'].map(m => `<option ${m === d.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+    <label class="f">Promised date<input type="date" id="f-due" value="${esc(d.due)}"></label>
+  </div></div>
+  <div class="card sec" style="margin-top:14px">
+    <div class="row between"><b>Items</b><span class="muted" style="font-size:12.5px">Tap a category to add a line. Brands and sizes suggest as you type; anything else can be typed in.</span></div>
+    <div class="catbar" style="margin-top:12px">${CATEGORIES.map(c => `<button class="catbtn" data-add="${c.key}">+ ${c.label}</button>`).join('')}</div>
+    ${lines || '<p class="muted" style="margin:14px 0 0">No items yet.</p>'}<span class="err" id="e-items"></span>
+  </div>
+  <div class="card sec" style="margin-top:14px"><div class="form">
+    <label class="f">Notes for the team<textarea id="f-notes" rows="2" placeholder="e.g. customer wants delivery before 11 am">${esc(d.notes)}</textarea></label>
+    ${isOwner() ? `<div class="form" style="grid-template-columns:1fr 1fr"><label class="f">Order value (₹)<input id="f-amount" inputmode="numeric" value="${esc(d.amount)}" placeholder="optional"></label><label class="f">Advance received (₹)<input id="f-advance" inputmode="numeric" value="${esc(d.advance)}" placeholder="optional"></label></div>` : '<p class="muted" style="margin:0">Order value and advance are entered by the owner.</p>'}
+  </div></div>
+  <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" data-clear>Clear</button><button class="btn btn--gold" data-create>Save job card</button></div>`;
+}
+function readDraft(){
+  const d = state.draft; if (!d) return;
+  ['name', 'phone', 'site', 'contractor', 'mode', 'due', 'notes', 'amount', 'advance'].forEach(k => { const el = $('#f-' + k); if (el) d[k] = el.value; });
+  document.querySelectorAll('[data-line]').forEach(row => { const it = d.items[+row.dataset.line]; row.querySelectorAll('[data-f]').forEach(inp => it[inp.dataset.f] = inp.value); });
+}
+function createJob(){
+  readDraft(); const d = state.draft; let bad = false;
+  const set = (id, msg) => { $(id).textContent = msg; if (msg) bad = true; };
+  set('#e-name', d.name.trim() ? '' : 'Enter the customer\'s name.');
+  set('#e-phone', /^[6-9]\d{9}$/.test(d.phone.trim()) ? '' : 'Enter a 10-digit mobile number.');
+  set('#e-items', !d.items.length ? 'Add at least one item.' : d.items.some(i => !(+i.qty > 0)) ? 'Every item needs a quantity.' : '');
+  if (bad) return toast('Check the highlighted fields.', true);
+  const no = 'WS-' + (Math.max(1040, ...DB.jobs.map(j => +j.no.split('-')[1])) + 1);
+  const at = now(), by = me().name;
+  const stages = {}; STAGES.forEach(s => stages[s.key] = null); stages.received = {by, at};
+  DB.jobs.push({no, customer:{name:d.name.trim(), phone:d.phone.trim()}, site:d.site.trim(), contractor:d.contractor.trim(), mode:d.mode, due:d.due, notes:d.notes.trim(),
+    items:d.items.map(i => { const o = {cat:i.cat}; cat(i.cat).fields.forEach(f => o[f] = f === 'qty' ? +i.qty : (i[f] || '').trim()); return o; }),
+    amount:+d.amount || 0, advance:+d.advance || 0, stages, createdAt:at, log:[{at, txt:`${by} created the job card (Order received)`}]});
+  save(); state.draft = null;
+  toast(`${no} created — send the customer their tracking link`);
+  go('job', no);
+}
+
+/* ---- today's team: who does what today, and the message each one gets */
+function viewTeam(){
+  const sent = DB.sent[todayKey()] || {};
+  const uncovered = STAGES.filter(s => !onDuty(s.key).length);
+  const cards = DB.workers.map(w => {
+    const d = duties(w.id), work = waitingFor(d.filter(k => k !== 'received')), s = sent[w.id];
+    return `<div class="card sec wk">
+      <div class="wk__head"><div><div class="wk__name">${esc(w.name)}</div><div class="muted">${phoneFmt(w.phone)} · ${w.lang === 'hi' ? 'Hindi' : 'English'}</div></div>
+        ${s ? `<span class="pill ok">Sent ${when(s.at).replace('Today, ', '')}</span>` : '<span class="pill warn">Not sent yet</span>'}</div>
+      <span class="tag" style="margin-top:12px">Duty today</span>
+      <div class="duties">${STAGES.map(st => `<button class="duty ${d.includes(st.key) ? 'on' : ''}" data-duty="${w.id}:${st.key}" ${isOwner() ? '' : 'disabled'}>${esc(st.label)}</button>`).join('')}</div>
+      <span class="tag" style="margin-top:14px">Job cards waiting for ${esc(w.name)} (${work.length})</span>
+      <ul class="worklist">${work.map(j => `<li><span><a href="#job/${j.no}" data-open="${j.no}"><b>${j.no}</b></a> ${esc(j.customer.name)} — ${esc(nextStage(j).label)}</span><span class="muted">${esc(j.mode)}</span></li>`).join('') || '<li class="muted">Nothing waiting right now.</li>'}</ul>
+      <span class="tag" style="margin-top:14px">Message ${esc(w.name)} gets</span>
+      <div class="bubble">${esc(workMessage(w))}<small>WhatsApp · daily work</small></div>
+      ${isOwner() ? `<div class="row" style="margin-top:12px"><a class="btn btn--wa btn--sm" href="https://wa.me/91${w.phone}?text=${encodeURIComponent(workMessage(w))}" target="_blank" rel="noopener" data-sentone="${w.id}">Send to ${esc(w.name)}</a>
+        <select class="in" style="width:auto;padding:6px 8px" data-lang="${w.id}"><option value="en" ${w.lang === 'en' ? 'selected' : ''}>English</option><option value="hi" ${w.lang === 'hi' ? 'selected' : ''}>Hindi</option></select>
+        <button class="btn btn--ghost btn--sm" data-delworker="${w.id}" title="Remove from the team">Remove</button></div>` : ''}
+    </div>`; }).join('');
+  return `<div class="row between"><div><h1 class="h1">Today's team</h1><p class="sub">${dayLabel(new Date())} · ${DB.workers.length} worker${DB.workers.length === 1 ? '' : 's'}. ${isOwner() ? 'Tap a duty to give it or take it away; each worker ticks only the steps of their duty.' : 'Your duty for today is set by the owner.'}</p></div>
+    ${isOwner() ? `<button class="btn btn--wa" data-sendall>Send today's work to all ${DB.workers.length}</button>` : ''}</div>
+  ${uncovered.length ? `<p class="note" style="margin:14px 0 0;background:var(--warn-bg);border-color:#f3d7a6;color:#7a4a00"><b>Nobody is on ${uncovered.map(s => s.label).join(', ')} today.</b> Cards waiting for ${uncovered.length === 1 ? 'that step' : 'those steps'} can only be ticked by the owner.</p>` : ''}
+  <p class="note" style="margin:14px 0 0">In this demo, "Send" opens WhatsApp with the message ready. In the hosted version every worker gets it by itself each morning, as an approved WhatsApp template — the same system already running on the clinic side.</p>
+  <div class="team">${cards}</div>
+  ${isOwner() ? `<div class="card sec" style="margin-top:16px"><b>Add a worker</b><div class="row" style="margin-top:10px;align-items:flex-end">
+    <label class="f" style="flex:1 1 180px">Name<input id="w-name" placeholder="e.g. Suresh"></label>
+    <label class="f" style="flex:1 1 180px">WhatsApp number<input id="w-phone" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number"></label>
+    <label class="f" style="flex:0 0 130px">Language<select id="w-lang"><option value="hi">Hindi</option><option value="en">English</option></select></label>
+    <button class="btn btn--dark" data-addworker style="margin-bottom:1px">Add to the team</button></div><span class="err" id="w-err"></span></div>` : ''}`;
+}
+
+/* ---- WhatsApp wording */
+function checkWording(key, text){
+  const T = TEMPLATE_DEFAULTS[key], used = [...text.matchAll(/\{(\w+)\}/g)].map(m => m[1]);
+  const unknown = used.filter(b => !T.blanks.includes(b));
+  if (unknown.length) return `{${unknown[0]}} is not one of the blanks.`;
+  const missing = T.required.filter(b => !used.includes(b));
+  if (missing.length) return `It must include {${missing[0]}}.`;
+  if (/^\s*\{/.test(text) || /\}\s*$/.test(text)) return 'It cannot begin or end with a blank — WhatsApp refuses that.';
+  if (text.trim().length < 30) return 'Too short — at least 30 characters.';
+  if (text.trim().length > 700) return 'Too long — at most 700 characters.';
+  return '';
+}
+function viewMessages(){
+  const sample = {name:'Ramesh', date:new Date().toLocaleDateString('en-IN', {day:'numeric', month:'long'}), duty:'Order material from suppliers', jobs:'WS-1045 Priya Agarwal; WS-1046 Suresh Kumawat', shop:SHOP.name,
+                  job:'WS-1043', status:'Material received', link:'woodstar.in/t/WS-1043'};
+  const block = key => { const T = TEMPLATE_DEFAULTS[key], lang = state.tplLang[key], text = DB.templates[key][lang], problem = checkWording(key, text);
+    return `<div class="card sec" style="margin-top:16px"><div class="row between"><div><b style="font-size:16px">${T.title}</b><div class="muted">Goes to: ${T.to}</div></div>
+      <div class="row"><div class="tabs"><button class="${lang === 'en' ? 'on' : ''}" data-tpllang="${key}:en">English</button><button class="${lang === 'hi' ? 'on' : ''}" data-tpllang="${key}:hi">Hindi</button></div><span class="pill warn">Not submitted yet</span></div></div>
+      <div class="tpl" style="margin-top:14px"><div>
+        <label class="f">Wording<textarea rows="5" data-tpl="${key}" ${isOwner() ? '' : 'disabled'}>${esc(text)}</textarea></label>
+        <span class="err" data-tplerr="${key}">${esc(problem)}</span>
+        <div class="tag" style="margin:4px 0 6px">Blanks you can use (tap to add)</div>
+        <div class="blanks">${T.blanks.map(b => `<button class="blank" data-blank="${key}:${b}">{${b}}</button>`).join('')}</div>
+        ${isOwner() ? `<div class="row" style="margin-top:12px"><button class="btn btn--sm" data-tplreset="${key}">Back to the standard wording</button></div>` : ''}
+      </div><div><span class="tag">Preview</span><div class="bubble" data-tplprev="${key}">${esc(fill(text, sample))}<small>WhatsApp</small></div>
+        <p class="muted" style="font-size:12.5px;margin:10px 0 0">A changed wording goes to WhatsApp for approval as a new template; the approved one keeps going out until then.</p></div></div></div>`; };
+  return `<h1 class="h1">WhatsApp messages</h1><p class="sub">The two messages the dashboard sends. Words in {curly brackets} are filled in for each person.</p>
+  <p class="note" style="margin:14px 0 0">Workers and customers usually haven't written to the shop in the last 24 hours, and WhatsApp only allows pre-approved messages to them. So each wording is submitted once for approval, then sent automatically — exactly how reminders already work for the clinics.</p>
+  ${block('work')}${block('update')}`;
+}
+
+/* ---- customer view (what the tracking link opens) */
+function viewTrack(){
+  const snap = state.snap, j = snap || (state.job ? DB.jobs.find(x => x.no === state.job) : null);
+  if (state.badLink) return `<div class="phone"><div class="phone__head"><div class="logo"><b>WoodStar</b><small>PLY · LAM</small></div><p style="margin:12px 0 0;color:#cbbfb1">Track your order</p></div>
+    <div class="phone__body"><p style="margin:0">This link is incomplete. Please ask us to send it again.</p>
+    <div class="row" style="margin-top:16px"><a class="btn btn--dark btn--sm" href="tel:+919983386101">Call WoodStar</a><a class="btn btn--wa btn--sm" href="https://wa.me/919983386101" target="_blank" rel="noopener">WhatsApp</a></div></div></div>`;
+  if (!j) return `<div class="phone"><div class="phone__head"><div class="logo"><b>WoodStar</b><small>PLY · LAM</small></div><p style="margin:12px 0 0;color:#cbbfb1">Track your order</p></div>
+    <div class="phone__body"><label class="f">Job card number<input id="t-no" placeholder="e.g. WS-1043" autocomplete="off"></label>
+    <label class="f" style="margin-top:12px">Last 4 digits of your phone<input id="t-ph" inputmode="numeric" maxlength="4" placeholder="e.g. 4567"></label>
+    <span class="err" id="t-err"></span><button class="btn btn--dark" style="width:100%;justify-content:center;margin-top:6px" data-find>Track order</button>
+    <p class="muted" style="font-size:12.5px;margin-top:14px">Try <b>WS-1043</b> with <b>4567</b>.</p></div></div>`;
+  const n = doneCount(j), st = statusOf(j), next = nextStage(j);
+  return `${snap ? '' : `<p class="muted" style="text-align:center;margin:0 0 6px">This is what ${esc(j.customer.name.split(' ')[0])} sees from the WhatsApp link — no app, no login.</p>`}
+  <div class="phone"><div class="phone__head"><div class="logo"><b>WoodStar</b><small>PLY · LAM</small></div>
+    <p style="margin:14px 0 2px;color:#cbbfb1;font-size:12.5px">Job card ${j.no}</p><h2 style="margin:0;font-size:22px">${n === STAGES.length ? 'Delivered ✓' : esc(st.label)}</h2>
+    <p style="margin:4px 0 0;color:#cbbfb1;font-size:13px">${n === STAGES.length ? 'Thank you for buying from WoodStar.' : `Next: ${esc(next.label)} · promised by ${new Date(j.due).toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'})}`}</p></div>
+  <div class="phone__body"><p style="margin:0">Namaste <b>${esc(j.customer.name)}</b>,</p>
+    <ul class="tl">${STAGES.map(s => { const d = j.stages[s.key];
+      return `<li class="${d ? 'done' : next && next.key === s.key ? 'now' : ''}"><i></i><b>${esc(s.label)}</b><span>${d ? `${esc(s.said)} · ${when(d.at)}` : next && next.key === s.key ? 'In progress' : 'Coming up'}</span></li>`; }).join('')}</ul>
+    <div style="border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><span class="tag">Your order</span>
+      <ul style="margin:8px 0 0;padding-left:18px;font-size:13px">${j.items.map(i => `<li>${esc(itemLine(i))}</li>`).join('')}</ul></div>
+    <div class="row" style="margin-top:16px"><a class="btn btn--dark btn--sm" href="tel:+919983386101">Call WoodStar</a><a class="btn btn--wa btn--sm" href="https://wa.me/919983386101?text=${encodeURIComponent('Hi, about job card ' + j.no)}" target="_blank" rel="noopener">WhatsApp</a></div>
+    <p class="muted" style="font-size:11.5px;margin:14px 0 0">${esc(SHOP.address)}</p></div></div>
+  ${snap ? `<p class="muted" style="text-align:center;font-size:12.5px">Status as on ${when(new Date(snap.asOf).toISOString())}. For the latest, message or call us.</p>`
+         : `<p style="text-align:center"><button class="btn btn--ghost" data-view="track">Track another order</button></p>`}`;
+}
+
+function printJob(no){
+  const j = DB.jobs.find(x => x.no === no);
+  $('#print').innerHTML = `<div class="pc"><div style="display:flex;justify-content:space-between"><div><h2>${SHOP.name}</h2><div>${SHOP.address} · ${SHOP.phone}</div></div><div style="text-align:right"><h2>${j.no}</h2><div>${new Date(j.createdAt).toLocaleDateString('en-IN')}</div></div></div>
+    <p><b>Customer:</b> ${esc(j.customer.name)} · ${phoneFmt(j.customer.phone)}<br><b>Site:</b> ${esc(j.site || '—')} · <b>${j.mode}</b> · promised ${new Date(j.due).toLocaleDateString('en-IN')}</p>
+    <table style="width:100%;border-collapse:collapse"><tr><th>Category</th><th>Brand</th><th>Thickness</th><th>Size / pack</th><th>Qty</th></tr>
+    ${j.items.map(i => `<tr><td>${cat(i.cat).label}</td><td>${esc(i.brand || '—')}</td><td>${esc(i.thickness || '—')}</td><td>${esc(i.size || i.pack || '—')}</td><td>${i.qty} ${cat(i.cat).unit}</td></tr>`).join('')}</table>
+    ${j.notes ? `<p><b>Notes:</b> ${esc(j.notes)}</p>` : ''}
+    <table style="width:100%;border-collapse:collapse;margin-top:10px"><tr>${STAGES.map(s => `<th>${s.label}</th>`).join('')}</tr><tr>${STAGES.map(s => `<td style="height:34px">${j.stages[s.key] ? '✓ ' + esc(j.stages[s.key].by) : ''}</td>`).join('')}</tr></table>
+    <p style="margin-top:10px">Track your order from the link we send you on WhatsApp.</p></div>`;
+  print();
+}
+
+/* ================================================================
+   Router + events
+================================================================= */
+function render(){
+  nav();
+  const v = state.view;
+  $('#app').innerHTML = v === 'board' ? viewBoard() : v === 'list' ? viewList() : v === 'job' ? viewJob() : v === 'new' ? viewNew() : v === 'team' ? viewTeam() : v === 'messages' ? viewMessages() : viewTrack();
+}
+function fromHash(){
+  const [v, j] = location.hash.replace('#', '').split('/');
+  state.snap = null; state.badLink = false;
+  if (v === 't') { try { state.snap = fromSnapshot(unpack(j || '')); } catch { state.badLink = true; } }
+  document.body.classList.toggle('customer', v === 't');
+  state.view = v === 't' ? 'track' : ['board', 'list', 'job', 'new', 'team', 'messages', 'track'].includes(v) ? v : 'board';
+  state.job = v === 't' ? null : j || null; render();
+}
+const markSent = ids => { const day = DB.sent[todayKey()] || (DB.sent[todayKey()] = {}); ids.forEach(id => day[id] = {at:now()}); save(); };
+$('#role').addEventListener('change', e => { state.who = e.target.value; toast(`Signed in as ${me().name}${isOwner() ? ' (Owner)' : ''}`); render(); });
+$('#q').addEventListener('input', e => { state.q = e.target.value; if (!['board', 'list'].includes(state.view)) state.view = 'list'; render(); });
+document.addEventListener('input', e => {
+  const key = e.target.dataset.tpl; if (!key) return;                       // live preview while the wording is typed
+  const lang = state.tplLang[key]; DB.templates[key][lang] = e.target.value; save();
+  $(`[data-tplerr="${key}"]`).textContent = checkWording(key, e.target.value);
+  const sample = {name:'Ramesh', date:new Date().toLocaleDateString('en-IN', {day:'numeric', month:'long'}), duty:'Order material from suppliers', jobs:'WS-1045 Priya Agarwal; WS-1046 Suresh Kumawat', shop:SHOP.name, job:'WS-1043', status:'Material received', link:'woodstar.in/t/WS-1043'};
+  $(`[data-tplprev="${key}"]`).innerHTML = esc(fill(e.target.value, sample)) + '<small>WhatsApp</small>';
+});
+document.addEventListener('change', e => {
+  if (e.target.dataset.lang) { DB.workers.find(w => w.id === e.target.dataset.lang).lang = e.target.value; save(); render(); }
+});
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-view],[data-open],[data-tick],[data-add],[data-remove],[data-create],[data-clear],[data-print],[data-trackjob],[data-find],[data-reset],[data-duty],[data-sendall],[data-sentone],[data-addworker],[data-delworker],[data-tpllang],[data-blank],[data-tplreset]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.view) { e.preventDefault(); readDraft(); return go(d.view); }
+  if (d.open) { e.preventDefault(); return go('job', d.open); }
+  if (d.tick) return toggle(DB.jobs.find(j => j.no === state.job), d.tick);
+  if (d.add) { readDraft(); const c = cat(d.add), it = {cat:c.key}; c.fields.forEach(f => it[f] = ''); state.draft.items.push(it); render();
+    const rows = document.querySelectorAll('[data-line]'); rows[rows.length - 1].querySelector('input').focus(); return; }
+  if (d.remove) { readDraft(); state.draft.items.splice(+d.remove, 1); return render(); }
+  if ('create' in d) return createJob();
+  if ('clear' in d) { state.draft = null; return render(); }
+  if (d.print) return printJob(d.print);
+  if (d.trackjob) return go('track', d.trackjob);
+  if ('find' in d) {
+    const no = $('#t-no').value.trim().toUpperCase().replace(/^(\d)/, 'WS-$1'), ph = $('#t-ph').value.trim();
+    const j = DB.jobs.find(x => x.no === no);
+    if (!j || !ph || !j.customer.phone.endsWith(ph)) { $('#t-err').textContent = 'No order matches that number and phone.'; return; }
+    return go('track', j.no);
+  }
+  if (d.duty) {
+    if (!isOwner()) return;
+    const [id, key] = d.duty.split(':'), day = DB.roster[todayKey()], list = day[id] || (day[id] = []);
+    const i = list.indexOf(key); i < 0 ? list.push(key) : list.splice(i, 1);
+    list.sort((a, b) => STAGES.findIndex(s => s.key === a) - STAGES.findIndex(s => s.key === b));
+    if (DB.sent[todayKey()]) delete DB.sent[todayKey()][id];                 // their message has changed: it needs sending again
+    save(); return render();
+  }
+  if ('sendall' in d) { markSent(DB.workers.map(w => w.id)); toast(`Today's work sent to ${DB.workers.length} workers (demo: marked as sent)`); return render(); }
+  if (d.sentone) { markSent([d.sentone]); return setTimeout(render, 50); }   // the link itself opens WhatsApp
+  if ('addworker' in d) {
+    const name = $('#w-name').value.trim(), phone = $('#w-phone').value.trim();
+    if (!name) return $('#w-err').textContent = 'Enter the worker\'s name.';
+    if (!/^[6-9]\d{9}$/.test(phone)) return $('#w-err').textContent = 'Enter a 10-digit mobile number.';
+    const id = 'w' + Date.now(); DB.workers.push({id, name, phone, lang:$('#w-lang').value}); DB.roster[todayKey()][id] = []; save();
+    toast(`${name} added — now give them a duty`); return render();
+  }
+  if (d.delworker) { const w = DB.workers.find(x => x.id === d.delworker);
+    if (confirm(`Remove ${w.name} from the team?`)) { DB.workers = DB.workers.filter(x => x.id !== w.id); delete DB.roster[todayKey()][w.id]; save(); render(); } return; }
+  if (d.tpllang) { const [key, lang] = d.tpllang.split(':'); state.tplLang[key] = lang; return render(); }
+  if (d.blank) { const [key, b] = d.blank.split(':'), ta = $(`[data-tpl="${key}"]`); if (ta.disabled) return;
+    const at = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, at) + `{${b}}` + ta.value.slice(ta.selectionEnd ?? at);
+    ta.dispatchEvent(new Event('input', {bubbles:true})); ta.focus(); return; }
+  if (d.tplreset) { DB.templates[d.tplreset][state.tplLang[d.tplreset]] = TEMPLATE_DEFAULTS[d.tplreset][state.tplLang[d.tplreset]]; save(); return render(); }
+  if ('reset' in d) { if (confirm('Put the demo data back to how it started?')) { DB = seed(); save(); state.draft = null; state.who = 'owner'; toast('Demo data reset'); go('board'); } }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 't-ph') $('[data-find]').click(); });
+addEventListener('hashchange', () => { const want = location.hash.replace('#', ''); if (want.startsWith('t/') || document.body.classList.contains('customer') || want !== `${state.view}${state.job ? '/' + state.job : ''}`) fromHash(); });
+fromHash();
+</script>
+</body>
+</html>
