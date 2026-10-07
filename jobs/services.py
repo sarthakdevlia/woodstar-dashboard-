@@ -198,6 +198,8 @@ def audit_text(entry):
         AuditEntry.EDITED: f"edited {entry.detail}",
         AuditEntry.TICKED: f"marked {stage}",
         AuditEntry.REVERSED: f"undid {stage}",
+        AuditEntry.MESSAGED: f"sent {entry.detail} on WhatsApp",
+        AuditEntry.MESSAGE_FAILED: f"could not send {entry.detail}",
     }[entry.action]
 
 

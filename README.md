@@ -32,10 +32,31 @@ Django app with staff logins. Built on the same pattern as the Delta Designs wor
 
 ## WhatsApp
 
-The buttons open WhatsApp with the message already written (wording is editable under *WhatsApp
-messages*). Nothing is sent automatically yet: messages that go out by themselves need WoodStar's own
-WhatsApp Business API number and each wording approved as a template. The wording checks here are the
-ones WhatsApp applies, so the saved wording can be submitted unchanged.
+With the shop's own number connected (see the environment variables below), three things go from
+that number through SD Ventures' Gupshup partner account — and nothing else, ever:
+
+- **A thank-you**, by itself, the moment a job card is saved.
+- **An order update**, only when someone presses the WhatsApp button on a job card.
+- **A reply** to any customer who messages the number: the step their order has reached, found by
+  their phone number. The owner switches this on once, under *WhatsApp messages*.
+
+The first two reach people who have not written first, so WhatsApp has to approve each wording, per
+language, as a template. The owner submits them under *WhatsApp messages*, which shows where each
+approval stands; a changed wording is a new template, and the approved one keeps going out until the
+new one is approved. Every send, and every failure, is written to the job card's audit trail.
+
+Without the number connected, the buttons open WhatsApp on the user's own phone with the message
+written, and no thank-you is sent. The worker's daily message always works that way.
+
+Each message is charged by WhatsApp and Gupshup. Replies to people who write in are spaced out (one a
+minute per phone; "no order found" at most twice a day) so a chatty number cannot run up a bill.
+
+**Only connect a number that this shop alone uses.** Once replies are on, every message sent to that
+number is answered from here.
+
+Not verified against a live number at the time of writing: the calls follow the clinic platform's
+client, parts of which are themselves marked unconfirmed there. The first real submission and send
+are the test.
 
 ## Run locally
 
@@ -76,6 +97,9 @@ workspace of WoodStar's own.
    | `OWNER_USERNAME` / `OWNER_NAME` / `OWNER_PASSWORD` | the owner's first login |
    | `PYTHON_VERSION` | `3.12.10` |
    | `FIRST_JOB_NUMBER` | optional; the first job card's number (default `1001`) |
+   | `WHATSAPP_PARTNER_EMAIL` / `WHATSAPP_PARTNER_SECRET` | the Gupshup partner login, same values as on `sdventures-api` |
+   | `WHATSAPP_APP_ID` | the Gupshup app ID of WoodStar's WhatsApp number |
+   | `WHATSAPP_WEBHOOK_SECRET` | a long random string (Generate); lets the app trust incoming messages |
 
    Once the owner has signed in, **delete `OWNER_PASSWORD`** — the account already exists and the
    command never overwrites it.

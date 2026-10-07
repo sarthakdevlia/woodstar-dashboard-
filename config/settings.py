@@ -148,6 +148,22 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
 
+# WhatsApp, through SD Ventures' Gupshup partner account (the same one the clinic side uses).
+# WHATSAPP_APP_ID is the Gupshup app of WoodStar's own number. With any of these four missing,
+# nothing is sent and the buttons open WhatsApp on the phone instead.
+WHATSAPP_API_BASE_URL = os.environ.get("WHATSAPP_API_BASE_URL", "https://partner.gupshup.io")
+WHATSAPP_PARTNER_EMAIL = os.environ.get("WHATSAPP_PARTNER_EMAIL", "")
+WHATSAPP_PARTNER_SECRET = os.environ.get("WHATSAPP_PARTNER_SECRET", "")
+WHATSAPP_APP_ID = os.environ.get("WHATSAPP_APP_ID", "")
+# Gupshup replays this as a header on every incoming message; the webhook refuses anything without it.
+WHATSAPP_WEBHOOK_SECRET = os.environ.get("WHATSAPP_WEBHOOK_SECRET", "")
+WHATSAPP_READY = all([WHATSAPP_PARTNER_EMAIL, WHATSAPP_PARTNER_SECRET, WHATSAPP_APP_ID])
+
+# Where customers reach this dashboard: tracking links in messages, and the address Gupshup
+# delivers incoming messages to. Defaults to the first real host in ALLOWED_HOSTS.
+_public_host = next((h for h in ALLOWED_HOSTS if h not in ("localhost", "127.0.0.1")), "")
+PUBLIC_URL = os.environ.get("PUBLIC_URL", f"https://{_public_host}" if _public_host else "http://127.0.0.1:8000").rstrip("/")
+
 # The first job card gets this number; later ones count up from the highest so far.
 FIRST_JOB_NUMBER = int(os.environ.get("FIRST_JOB_NUMBER", "1001"))
 

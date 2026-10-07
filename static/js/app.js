@@ -13,7 +13,7 @@ const FIELD_LABEL = {brand:'Brand', thickness:'Thickness', size:'Size', pack:'Pa
 const REFRESH_MS = 25000;                  // how often the page checks for other people's ticks
 
 let ME = Object.assign({duties:[]}, BOOT.me);
-let DB = {jobs:[], workers:[], roster:{}, sent:{}, templates:{}, staff:null};
+let DB = {jobs:[], workers:[], roster:{}, sent:{}, templates:{}, whatsapp:null, staff:null};
 let loaded = false;
 
 /* ================================================================
@@ -45,7 +45,7 @@ function takeJob(j){ const i = DB.jobs.findIndex(x => x.no === j.no); if (i < 0)
 async function refresh(quiet){
   try {
     const s = await api('GET', 'state/' + (state.all ? '?scope=all' : ''));
-    ME = s.me; DB.jobs = s.jobs; DB.templates = s.templates; takeTeam(s); loaded = true;
+    ME = s.me; DB.jobs = s.jobs; DB.templates = s.templates; DB.whatsapp = s.whatsapp; takeTeam(s); loaded = true;
     // don't redraw under someone who is typing
     const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.id !== 'q';
     if (!quiet || !typing) render();
@@ -80,7 +80,7 @@ const trackUrl = j => location.origin + j.track;
 const fill = (text, values) => text.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
 
 /* who is signed in, and what they may tick today */
-const state = {view:'board', job:null, detail:null, q:'', all:false, draft:null, tplLang:{work:'en', update:'en'}, tplDraft:{}};
+const state = {view:'board', job:null, detail:null, q:'', all:false, draft:null, tplLang:{work:'en', thanks:'en', update:'en'}, tplDraft:{}};
 const isOwner = () => ME.is_owner;
 const duties = id => DB.roster[id] || [];
 const myDuties = () => ME.duties || [];
@@ -89,9 +89,16 @@ const waitingFor = keys => DB.jobs.filter(j => { const n = nextStage(j); return 
 const wording = (key, lang) => (DB.templates[key] || TEMPLATE_DEFAULTS[key])[lang];
 
 function customerMessage(j){
-  return fill(wording('update', 'en'), {name:j.customer.name, job:j.no, status:statusOf(j).label, link:trackUrl(j), shop:SHOP.name});
+  const lang = j.lang === 'hi' ? 'hi' : 'en', st = statusOf(j);
+  return fill(wording('update', lang), {name:j.customer.name, job:j.no, status:lang === 'hi' ? st.labelHi : st.label, link:trackUrl(j), shop:SHOP.name});
 }
 const waCustomer = j => `https://wa.me/91${j.customer.phone}?text=${encodeURIComponent(customerMessage(j))}`;
+/* The WhatsApp button on a job card. With the shop's own number connected it sends the update
+   from that number; until then it opens WhatsApp on this phone with the message written. */
+const waReady = () => !!(DB.whatsapp && DB.whatsapp.ready);
+const waButton = j => waReady()
+  ? '<button class="btn btn--wa" data-wasend="update">Send update on WhatsApp</button>'
+  : `<a class="btn btn--wa" href="${waCustomer(j)}" target="_blank" rel="noopener">Send update on WhatsApp</a>`;
 function workMessage(w){
   const d = duties(w.id), hi = w.lang === 'hi';
   // one line each: a template blank cannot hold line breaks
@@ -217,19 +224,21 @@ function viewJob(){
   const tiles = STAGES.map(s => {
     const d = j.stages[s.key], v = can(j, s.key), who = onDuty(s.key).map(w => w.name).join(', ');
     return `<div class="pstage ${d ? 'done' : ''} ${next && next.key === s.key ? 'next' : ''}">
-      <div class="nm">${esc(s.label)}</div><div class="team">Today: ${esc(who || 'nobody assigned')}</div>
+      <div class="nm">${esc(s.label)}</div><div class="today">Today: ${esc(who || 'nobody assigned')}</div>
       <div class="who">${d ? `✓ ${esc(d.by)}<br>${when(d.at)}` : next && next.key === s.key ? 'Waiting for this step' : '—'}</div>
       <button class="btn btn--sm ${d ? '' : 'btn--dark'}" data-tick="${s.key}" ${v.ok ? '' : 'disabled'} title="${esc(v.ok ? '' : v.msg)}">${d ? 'Undo' : 'Mark done'}</button></div>`;
   }).join('');
   const rows = j.items.map(i => { const c = cat(i.cat); return `<tr><td>${c.label}</td><td>${esc(i.brand || '—')}</td><td>${esc(i.thickness || '—')}</td><td>${esc(i.size || i.pack || '—')}</td><td class="mono"><b>${i.qty}</b> ${c.unit}</td></tr>`; }).join('');
   return `<div class="row between"><div><p class="tag" style="margin:0"><a href="#list" data-view="list" style="text-decoration:none">← All job cards</a></p>
       <h1 class="h1">${j.no} · ${esc(j.customer.name)}</h1><p class="sub">Received ${when(j.createdAt)} · ${esc(j.mode)} · promised ${new Date(j.due).toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'})}</p></div>
-    <div class="row"><a class="btn btn--wa" href="${waCustomer(j)}" target="_blank" rel="noopener">Send update on WhatsApp</a><button class="btn" data-print="${j.no}">Print job card</button><a class="btn" href="${esc(j.track)}" target="_blank" rel="noopener">See what the customer sees</a></div></div>
+    <div class="row">${waButton(j)}<button class="btn" data-print="${j.no}">Print job card</button><a class="btn" href="${esc(j.track)}" target="_blank" rel="noopener">See what the customer sees</a></div></div>
   <div class="card sec" style="margin-top:16px"><div class="row between" style="margin-bottom:12px"><b>Process</b><span class="muted" style="font-size:12.5px">Each step is ticked by whoever has that duty today, in order. The customer's tracking page follows every tick.</span></div><div class="stages">${tiles}</div></div>
   <div class="detail">
     <div class="card"><div class="sec"><b>Items</b></div><div style="overflow-x:auto"><table class="items"><thead><tr><th>Category</th><th>Brand</th><th>Thickness</th><th>Size / pack</th><th>Quantity</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${j.notes ? `<div class="sec"><span class="tag">Notes</span><p style="margin:6px 0 0">${esc(j.notes)}</p></div>` : ''}
-      <div class="sec"><span class="tag">What the customer is sent</span><div class="bubble">${esc(customerMessage(j))}<small>WhatsApp · order update</small></div></div></div>
+      <div class="sec"><span class="tag">What the customer is sent</span><div class="bubble">${esc(customerMessage(j))}<small>WhatsApp · order update · ${j.lang === 'hi' ? 'Hindi' : 'English'}</small></div>
+        ${waReady() ? `<p class="muted" style="font-size:12.5px;margin:10px 0 0">Goes from the shop's WhatsApp number when you press the green button. Nothing is sent by itself except the thank-you when the card is saved.</p>
+        <div class="row" style="margin-top:10px"><button class="btn btn--sm" data-wasend="thanks">Send the thank-you again</button><a class="btn btn--sm btn--ghost" href="${waCustomer(j)}" target="_blank" rel="noopener">Open in my own WhatsApp instead</a></div>` : ''}</div></div>
     <div class="card">
       <div class="sec"><span class="tag">Customer</span><dl class="kv" style="margin:10px 0 0"><dt>Name</dt><dd>${esc(j.customer.name)}</dd><dt>Phone</dt><dd><a href="tel:+91${esc(j.customer.phone)}">${phoneFmt(j.customer.phone)}</a></dd>
         <dt>Site</dt><dd>${esc(j.site || '—')}</dd><dt>Carpenter / ref.</dt><dd>${esc(j.contractor || '—')}</dd></dl></div>
@@ -241,7 +250,7 @@ function viewJob(){
 }
 
 /* ---- new job card */
-function blankDraft(){ return {name:'', phone:'', site:'', contractor:'', mode:'Pickup', due:new Date(Date.now() + 864e5).toISOString().slice(0, 10), notes:'', amount:'', advance:'', items:[]}; }
+function blankDraft(){ return {name:'', phone:'', site:'', contractor:'', mode:'Pickup', lang:'en', due:new Date(Date.now() + 864e5).toISOString().slice(0, 10), notes:'', amount:'', advance:'', items:[]}; }
 function viewNew(){
   if (!myDuties().includes('received')) return `<h1 class="h1">New job card</h1><p class="sub">Job cards are created by whoever has "Order received" as their duty today${onDuty('received').length ? ` (${esc(onDuty('received').map(w => w.name).join(', '))})` : ''}, or by the owner.</p>`;
   const d = state.draft || (state.draft = blankDraft());
@@ -261,6 +270,7 @@ function viewNew(){
     <label class="f">Carpenter / reference<input id="f-contractor" value="${esc(d.contractor)}" placeholder="optional" maxlength="80"></label>
     <label class="f">Pickup or delivery<select id="f-mode">${['Pickup', 'Delivery'].map(m => `<option ${m === d.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
     <label class="f">Promised date<input type="date" id="f-due" value="${esc(d.due)}"><span class="err" id="e-due"></span></label>
+    <label class="f">WhatsApp messages in<select id="f-lang">${BOOT.langs.map(([k, t]) => `<option value="${k}" ${k === d.lang ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
   </div></div>
   <div class="card sec" style="margin-top:14px">
     <div class="row between"><b>Items</b><span class="muted" style="font-size:12.5px">Tap a category to add a line. Brands and sizes suggest as you type; anything else can be typed in.</span></div>
@@ -275,7 +285,7 @@ function viewNew(){
 }
 function readDraft(){
   const d = state.draft; if (!d || state.view !== 'new') return;
-  ['name', 'phone', 'site', 'contractor', 'mode', 'due', 'notes', 'amount', 'advance'].forEach(k => { const el = $('#f-' + k); if (el) d[k] = el.value; });
+  ['name', 'phone', 'site', 'contractor', 'mode', 'lang', 'due', 'notes', 'amount', 'advance'].forEach(k => { const el = $('#f-' + k); if (el) d[k] = el.value; });
   document.querySelectorAll('[data-line]').forEach(row => { const it = d.items[+row.dataset.line]; row.querySelectorAll('[data-f]').forEach(inp => it[inp.dataset.f] = inp.value); });
 }
 async function createJob(btn){
@@ -286,14 +296,15 @@ async function createJob(btn){
   set('#e-due', d.due ? '' : 'Choose the promised date.');
   set('#e-items', !d.items.length ? 'Add at least one item.' : d.items.some(i => !(+i.qty > 0)) ? 'Every item needs a quantity.' : '');
   if (bad) return toast('Check the highlighted fields.', true);
-  const body = {customer_name:d.name.trim(), customer_phone:d.phone.trim(), site:d.site.trim(), contractor:d.contractor.trim(), mode:d.mode, due:d.due, notes:d.notes.trim(),
+  const body = {customer_name:d.name.trim(), customer_phone:d.phone.trim(), site:d.site.trim(), contractor:d.contractor.trim(), mode:d.mode, lang:d.lang, due:d.due, notes:d.notes.trim(),
     items:d.items.map(i => { const o = {category:i.cat}; cat(i.cat).fields.forEach(f => o[f] = f === 'qty' ? Math.round(+i.qty) : (i[f] || '').trim()); return o; })};
   if (isOwner()) { body.amount = +d.amount || 0; body.advance = +d.advance || 0; }
   btn.disabled = true;
   try {
     const j = await api('POST', 'jobs/', body);
     takeJob(j); state.draft = null;
-    toast(`${j.no} created — send the customer their tracking link`);
+    const th = j.thanks || {};
+    toast(th.sent ? `${j.no} created — thank-you sent to ${j.customer.name} on WhatsApp` : waReady() ? `${j.no} created. Thank-you not sent: ${th.reason}` : `${j.no} created — send the customer their tracking link`, !th.sent && waReady());
     go('job', j.no);
   } catch (e) { btn.disabled = false; toast(firstError(e), true); }
 }
@@ -335,9 +346,22 @@ function checkWording(key, text){
 }
 const tplSample = () => ({name:'Ramesh', date:new Date().toLocaleDateString('en-IN', {day:'numeric', month:'long'}), duty:'Order material from suppliers', jobs:'WS-1045 Priya Agarwal; WS-1046 Suresh Kumawat', shop:SHOP.name,
   job:'WS-1043', status:'Material received', link:location.origin + '/t/…'});
+const SENT_BY_NUMBER = ['thanks', 'update'];             // these go from the shop's number, so WhatsApp must approve them
+const APPROVAL = {not_submitted:['warn', 'Not sent for approval'], pending:['info', "Waiting for WhatsApp's approval"], approved:['ok', 'Approved by WhatsApp'],
+  rejected:['bad', 'Rejected by WhatsApp'], failed:['bad', 'Could not be submitted']};
 function viewMessages(){
   if (!isOwner()) return '<h1 class="h1">WhatsApp messages</h1><p class="sub">Only the owner can change the wording.</p>';
+  const wa = DB.whatsapp || {messages:{}};
   const block = key => { const T = TEMPLATE_DEFAULTS[key], lang = state.tplLang[key], saved = wording(key, lang), text = state.tplDraft[key + lang] ?? saved, problem = checkWording(key, text);
+    const a = SENT_BY_NUMBER.includes(key) && wa.messages[key] ? wa.messages[key][lang] : null;
+    const canSubmit = a && wa.ready && text === saved && !problem && a.status !== 'pending' && (a.status === 'not_submitted' || a.status === 'failed' || a.edited);
+    const approval = !a ? '' : `<div class="row" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+        <span class="pill ${APPROVAL[a.status][0]}">${APPROVAL[a.status][1]}</span>
+        ${a.edited && a.status !== 'not_submitted' ? '<span class="pill warn">Wording changed since — submit it again</span>' : ''}
+        <button class="btn btn--wa btn--sm" data-wasubmit="${key}" ${canSubmit ? '' : 'disabled'}>Submit to WhatsApp for approval</button></div>
+      ${a.reason ? `<p class="err" style="margin:8px 0 0">${esc(a.reason)}</p>` : ''}
+      <p class="muted" style="font-size:12.5px;margin:8px 0 0">${!wa.ready ? "Approval starts once the shop's number is connected." : a.status === 'approved' && !a.edited ? 'This is the wording customers are sent.'
+        : a.in_use ? 'The earlier approved wording keeps going out until this one is approved.' : 'Nothing can be sent in this language until WhatsApp approves it; the other language is used if that one is approved.'}</p>`;
     return `<div class="card sec" style="margin-top:16px"><div class="row between"><div><b style="font-size:16px">${T.title}</b><div class="muted">Goes to: ${T.to}</div></div>
       <div class="row"><div class="tabs"><button class="${lang === 'en' ? 'on' : ''}" data-tpllang="${key}:en">English</button><button class="${lang === 'hi' ? 'on' : ''}" data-tpllang="${key}:hi">Hindi</button></div>
         <span class="pill ${text === saved ? 'ok' : 'warn'}" data-tplstate="${key}">${text === saved ? (saved === T[lang] ? 'Standard wording' : 'Your wording') : 'Not saved'}</span></div></div>
@@ -347,11 +371,19 @@ function viewMessages(){
         <div class="tag" style="margin:4px 0 6px">Blanks you can use (tap to add)</div>
         <div class="blanks">${T.blanks.map(b => `<button class="blank" data-blank="${key}:${b}">{${b}}</button>`).join('')}</div>
         <div class="row" style="margin-top:12px"><button class="btn btn--dark btn--sm" data-tplsave="${key}">Save wording</button><button class="btn btn--sm" data-tplreset="${key}">Back to the standard wording</button></div>
+        ${approval}
       </div><div><span class="tag">Preview</span><div class="bubble" data-tplprev="${key}">${esc(fill(text, tplSample()))}<small>WhatsApp</small></div>
-        <p class="muted" style="font-size:12.5px;margin:10px 0 0">This wording fills the message when you press a WhatsApp button on a job card or in Today's team.</p></div></div></div>`; };
-  return `<h1 class="h1">WhatsApp messages</h1><p class="sub">The two messages the dashboard writes. Words in {curly brackets} are filled in for each person.</p>
-  <p class="note" style="margin:14px 0 0">The checks here are the ones WhatsApp applies to pre-approved messages, so the same wording can be submitted unchanged when automatic sending is switched on.</p>
-  ${block('work')}${block('update')}`;
+        <p class="muted" style="font-size:12.5px;margin:10px 0 0">${a ? 'Sent from the shop\'s WhatsApp number. A changed wording has to be approved by WhatsApp again before it is used.' : "This wording fills the message when you press a worker's WhatsApp button in Today's team; it opens in your own WhatsApp."}</p></div></div></div>`; };
+  const top = !wa.ready
+    ? `<p class="note" style="margin:14px 0 0">Sending from the shop's own WhatsApp number is not switched on yet. Until it is, the WhatsApp buttons open WhatsApp on your own phone with the message written, and no thank-you goes by itself.</p>`
+    : `<div class="card sec" style="margin-top:14px"><div class="row between"><div><b>The shop's WhatsApp number is connected</b><div class="muted">The thank-you goes by itself when a job card is saved. An order update goes only when someone presses the WhatsApp button on a job card.</div></div>
+        <button class="btn btn--sm" data-warefresh>Check approvals now</button></div>
+      <div class="row between" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><div><b>Customers asking where their order is</b>
+        <div class="muted">${wa.replies_on ? 'Anyone who messages the number is sent the step their order has reached, found by their phone number.' : 'Switch this on and anyone who messages the number is sent the step their order has reached, found by their phone number.'}</div></div>
+        ${wa.replies_on ? '<span class="pill ok">On</span>' : `<button class="btn btn--dark btn--sm" data-wareplies ${wa.can_reply ? '' : 'disabled title="Needs WHATSAPP_WEBHOOK_SECRET in the service settings"'}>Switch on</button>`}</div></div>`;
+  return `<h1 class="h1">WhatsApp messages</h1><p class="sub">The messages the dashboard writes. Words in {curly brackets} are filled in for each person.</p>
+  ${top}
+  ${block('thanks')}${block('update')}${block('work')}`;
 }
 
 /* ---- staff & logins (owner) */
@@ -431,7 +463,7 @@ document.addEventListener('change', e => {
   patchStaff(+id, {[field]:value});
 });
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-view],[data-open],[data-tick],[data-add],[data-remove],[data-create],[data-clear],[data-print],[data-all],[data-pay],[data-duty],[data-sentone],[data-tpllang],[data-blank],[data-tplsave],[data-tplreset],[data-staffadd],[data-staffpass],[data-staffactive]');
+  const t = e.target.closest('[data-view],[data-open],[data-tick],[data-add],[data-remove],[data-create],[data-clear],[data-print],[data-all],[data-pay],[data-duty],[data-sentone],[data-tpllang],[data-blank],[data-tplsave],[data-tplreset],[data-wasend],[data-wasubmit],[data-warefresh],[data-wareplies],[data-staffadd],[data-staffpass],[data-staffactive]');
   if (!t) return;
   const d = t.dataset;
   if (d.view) { e.preventDefault(); readDraft(); return go(d.view); }
@@ -458,6 +490,20 @@ document.addEventListener('click', async e => {
   }
   if (d.sentone) {                                                          // the link itself opens WhatsApp
     try { takeTeam(await api('POST', 'roster/sent/', {user_ids:[+d.sentone]})); } catch (err) { toast(err.message, true); }
+    return render();
+  }
+  if (d.wasend) {                                                           // from the shop's number, now
+    const j = currentJob(); t.disabled = true;
+    try { takeJob(await api('POST', `jobs/${j.number}/messages/`, {kind:d.wasend})); toast(d.wasend === 'thanks' ? `Thank-you sent to ${j.customer.name}` : `Update sent to ${j.customer.name}: ${statusOf(j).label}`); }
+    catch (err) { toast(err.message, true); loadJob(j.no, true); }
+    return render();
+  }
+  if (d.wasubmit || 'warefresh' in d || 'wareplies' in d) {
+    if ('wareplies' in d && !confirm("Switch this on only if this WhatsApp number is used for WoodStar alone.\n\nEvery message sent to the number will be answered from here with the sender's order status. Continue?")) return;
+    const path = d.wasubmit ? `whatsapp/templates/${d.wasubmit}/${state.tplLang[d.wasubmit]}/submit/` : 'warefresh' in d ? 'whatsapp/refresh/' : 'whatsapp/replies/';
+    t.disabled = true;
+    try { const r = await api('POST', path); DB.templates = r.templates; DB.whatsapp = r.whatsapp; toast(d.wasubmit ? 'Sent to WhatsApp for approval. It usually answers within a few hours.' : 'warefresh' in d ? 'Approvals checked.' : 'Replies are on.'); }
+    catch (err) { toast(err.message, true); await refresh(true); }
     return render();
   }
   if (d.tpllang) { const [key, lang] = d.tpllang.split(':'); state.tplLang[key] = lang; return render(); }

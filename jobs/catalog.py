@@ -33,8 +33,9 @@ SHOP = {
 }
 
 # WhatsApp wording. `blanks` are the {names} a wording may use; `required` must appear.
-# The rules in services.check_wording are the ones WhatsApp applies to approved templates,
-# so a wording saved here can later be submitted as one unchanged.
+# "work" only fills the WhatsApp link on Today's team. "thanks" and "update" are sent from the
+# shop's own number, to people who have not written first, so WhatsApp must approve each as a
+# template (jobs/whatsapp.py); services.check_wording applies WhatsApp's rules before that.
 TEMPLATE_DEFAULTS = {
     "work": {
         "title": "Worker's daily work", "to": "Each worker, every morning",
@@ -44,8 +45,16 @@ TEMPLATE_DEFAULTS = {
         "hi": "नमस्ते {name}, {date} को {shop} में आपका काम: {duty}। आपके जॉब कार्ड: {jobs}। "
               "काम पूरा होने पर डैशबोर्ड पर टिक करें।",
     },
+    "thanks": {
+        "title": "Thank-you when the order is taken", "to": "The customer, by itself, the moment the job card is saved",
+        "blanks": ["name", "job", "link", "shop"], "required": ["job"],
+        "en": "Namaste {name}, thank you for your order at {shop}. Your job card number is {job}. "
+              "Track your order any time: {link} You can also message us on this number to know where it has reached.",
+        "hi": "नमस्ते {name}, {shop} से ऑर्डर करने के लिए धन्यवाद। आपका जॉब कार्ड नंबर {job} है। "
+              "अपना ऑर्डर यहाँ देखें: {link} ऑर्डर कहाँ तक पहुँचा, यह जानने के लिए इसी नंबर पर संदेश भेजें।",
+    },
     "update": {
-        "title": "Order update to the customer", "to": "The customer, at every step",
+        "title": "Order update to the customer", "to": "The customer, when someone presses the WhatsApp button on the job card",
         "blanks": ["name", "job", "status", "link", "shop"], "required": ["job", "status"],
         "en": "Namaste {name}, your order {job} at {shop} is now: {status}. Track it any time: {link} Thank you.",
         "hi": "नमस्ते {name}, {shop} में आपका ऑर्डर {job} अब इस स्थिति में है: {status}। यहाँ देखें: {link} धन्यवाद।",

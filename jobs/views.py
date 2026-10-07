@@ -1,14 +1,22 @@
+import json
+import logging
+
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 
+from . import whatsapp
 from .catalog import CATEGORIES, SHOP, TEMPLATE_DEFAULTS, item_line
 from .models import Job
 from .serializers import me_to_dict
 from .stages import LANG_CHOICES, ROLE_CHOICES, STAGES
+
+log = logging.getLogger(__name__)
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_SECONDS = 15 * 60
@@ -82,6 +90,26 @@ def track(request, token):
     })
     response["Cache-Control"] = "no-store"
     return response
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def whatsapp_webhook(request):
+    """Where Gupshup delivers messages customers send to the shop's number. Public, so it
+    answers only deliveries carrying the secret header registered with the subscription."""
+    if request.method == "GET":
+        return HttpResponse("", content_type="text/plain")      # Gupshup checks the address answers
+    if not whatsapp.is_from_provider(request):
+        return HttpResponse("forbidden", status=403, content_type="text/plain")
+    try:
+        payload = json.loads(request.body or b"{}")
+    except ValueError:
+        payload = {}
+    try:
+        whatsapp.handle_incoming(payload)
+    except Exception:  # noqa: BLE001 — never make Gupshup retry over our own bug
+        log.exception("Incoming WhatsApp delivery could not be handled")
+    return HttpResponse("", content_type="text/plain")
 
 
 def healthz(request):

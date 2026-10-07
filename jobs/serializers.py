@@ -36,7 +36,7 @@ class JobCreateSerializer(JobFieldsMixin, serializers.ModelSerializer):
 
     class Meta:
         model = Job
-        fields = ["customer_name", "customer_phone", "site", "contractor", "mode", "due", "notes",
+        fields = ["customer_name", "customer_phone", "site", "contractor", "mode", "due", "notes", "lang",
                   "amount", "advance", "items"]
 
 
@@ -47,7 +47,7 @@ class JobUpdateSerializer(JobFieldsMixin, serializers.ModelSerializer):
 
     class Meta:
         model = Job
-        fields = ["customer_name", "customer_phone", "site", "contractor", "mode", "due", "notes", "amount", "advance"]
+        fields = ["customer_name", "customer_phone", "site", "contractor", "mode", "due", "notes", "lang", "amount", "advance"]
 
 
 def _stamp(dt):
@@ -65,6 +65,7 @@ def job_to_dict(job, user, detail=False):
         "mode": job.mode,
         "due": job.due.isoformat(),
         "notes": job.notes,
+        "lang": job.lang,
         "items": [
             {"cat": i.category, "qty": i.qty,
              **{f: getattr(i, f) for f in CATEGORY_BY_KEY[i.category]["fields"] if f != "qty"}}
@@ -91,6 +92,10 @@ class DutySerializer(serializers.Serializer):
 
 class SentSerializer(serializers.Serializer):
     user_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), min_length=1, max_length=200)
+
+
+class MessageSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=["thanks", "update"])
 
 
 class WordingSerializer(serializers.Serializer):

@@ -8,13 +8,14 @@ from rest_framework.decorators import api_view
 from staff import services as staff_services
 from staff.models import User
 
-from . import services
+from . import services, whatsapp
 from .catalog import TEMPLATE_DEFAULTS
 from .models import Job, StageTick
 from .responses import fail, ok
 from .serializers import (
-    DutySerializer, JobCreateSerializer, JobUpdateSerializer, SentSerializer, StaffCreateSerializer,
-    StaffUpdateSerializer, WordingSerializer, job_to_dict, me_to_dict, staff_to_dict, worker_to_dict,
+    DutySerializer, JobCreateSerializer, JobUpdateSerializer, MessageSerializer, SentSerializer,
+    StaffCreateSerializer, StaffUpdateSerializer, WordingSerializer, job_to_dict, me_to_dict, staff_to_dict,
+    worker_to_dict,
 )
 from .stages import STAGE_KEYS, WORKER
 
@@ -63,7 +64,8 @@ def state(request):
     with the other phones and the counter computer."""
     me = me_to_dict(request.user)
     me["duties"] = services.duties_of(request.user)
-    return ok({"me": me, **_team(), "templates": services.wordings(), "jobs": _jobs(request)})
+    return ok({"me": me, **_team(), "templates": services.wordings(), "whatsapp": whatsapp.status_view(),
+               "jobs": _jobs(request)})
 
 
 @api_view(["POST"])
@@ -71,7 +73,11 @@ def jobs(request):
     data = _validated(JobCreateSerializer, request.data)
     items = data.pop("items")
     job = services.create_job(request.user, data, items)
-    return ok(_job_detail(request, job.number), f"{job.code} created.", status.HTTP_201_CREATED)
+    # The thank-you goes by itself; the card is saved whether or not it could be sent.
+    sent, reason = whatsapp.send_thanks(job)
+    detail = _job_detail(request, job.number)
+    detail["thanks"] = {"sent": sent, "reason": reason}
+    return ok(detail, f"{job.code} created.", status.HTTP_201_CREATED)
 
 
 @api_view(["GET", "PATCH"])
@@ -89,6 +95,15 @@ def job_stage(request, number, stage):
         return fail("Unknown step.", code=status.HTTP_404_NOT_FOUND)
     services.set_stage(request.user, number, stage, complete=request.method == "PUT")
     return ok(_job_detail(request, number))
+
+
+@api_view(["POST"])
+def job_message(request, number):
+    """The WhatsApp button on a job card: send the customer the message now, from the shop's number."""
+    kind = _validated(MessageSerializer, request.data)["kind"]
+    job = Job.objects.prefetch_related("ticks").get(number=number)
+    what = whatsapp.send_to_customer(job, kind, actor=request.user)
+    return ok(_job_detail(request, number), f"Sent {what} to {job.customer_name}.")
 
 
 @api_view(["PUT"])
@@ -115,6 +130,32 @@ def template(request, key, lang):
     body = _validated(WordingSerializer, request.data)["body"]
     services.save_wording(request.user, key, lang, body)
     return ok(services.wordings(), "Wording saved.")
+
+
+def _whatsapp_state():
+    return {"templates": services.wordings(), "whatsapp": whatsapp.status_view()}
+
+
+@api_view(["POST"])
+def whatsapp_submit(request, key, lang):
+    if key not in whatsapp.TEMPLATE_KEYS or lang not in whatsapp.LANGS:
+        return fail("Unknown message.", code=status.HTTP_404_NOT_FOUND)
+    whatsapp.submit(request.user, key, lang)
+    return ok(_whatsapp_state(), "Sent to WhatsApp for approval. It usually answers within a few hours.")
+
+
+@api_view(["POST"])
+def whatsapp_refresh(request):
+    if not request.user.is_owner:
+        return fail("Only the owner can check approvals.", code=status.HTTP_403_FORBIDDEN)
+    whatsapp.refresh()
+    return ok(_whatsapp_state())
+
+
+@api_view(["POST"])
+def whatsapp_replies(request):
+    whatsapp.connect_incoming(request.user)
+    return ok(_whatsapp_state(), "Customers who message the number will now be told where their order is.")
 
 
 @api_view(["GET", "POST"])

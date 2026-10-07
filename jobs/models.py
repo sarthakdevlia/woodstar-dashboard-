@@ -25,6 +25,8 @@ class Job(models.Model):
     mode = models.CharField(max_length=10, choices=MODE_CHOICES, default=PICKUP)
     due = models.DateField()
     notes = models.CharField(max_length=500, blank=True)
+    # The language this customer's WhatsApp messages go in.
+    lang = models.CharField(max_length=2, choices=LANG_CHOICES, default="en")
     # Owner-only. Never serialised for workers or shown on the tracking page.
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     advance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -78,7 +80,9 @@ class AuditEntry(models.Model):
     """Append-only. Nothing in the app updates or deletes these rows."""
 
     CREATED, EDITED, TICKED, REVERSED = "created", "edited", "ticked", "reversed"
-    ACTION_CHOICES = [(a, a) for a in (CREATED, EDITED, TICKED, REVERSED)]
+    # A WhatsApp message to the customer went out, or could not; `detail` says which and why.
+    MESSAGED, MESSAGE_FAILED = "messaged", "message_failed"
+    ACTION_CHOICES = [(a, a) for a in (CREATED, EDITED, TICKED, REVERSED, MESSAGED, MESSAGE_FAILED)]
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="audit")
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)
@@ -143,3 +147,64 @@ class MessageWording(models.Model):
     class Meta:
         db_table = "message_wordings"
         constraints = [models.UniqueConstraint(fields=["key", "lang"], name="one_wording_per_message_language")]
+
+
+class WhatsAppTemplate(models.Model):
+    """One message wording submitted to WhatsApp for approval, and where that stands.
+
+    `key` is the message ("thanks", "update"); `element_name` is the name it was submitted
+    under. One row per language and version: an approved template's words cannot be edited,
+    so new wording is a new template (version 2, 3…) and the approved one stays in use until
+    the new one is approved too."""
+
+    PENDING, APPROVED, REJECTED, FAILED = "pending", "approved", "rejected", "failed"
+    STATUS_CHOICES = [
+        (PENDING, "Waiting for WhatsApp's approval"), (APPROVED, "Approved"), (REJECTED, "Rejected"),
+        (FAILED, "Not submitted"),  # the provider refused the submission itself
+    ]
+
+    key = models.CharField(max_length=20)
+    lang = models.CharField(max_length=2, choices=LANG_CHOICES)
+    version = models.PositiveSmallIntegerField(default=1)
+    element_name = models.CharField(max_length=120)
+    # The wording as submitted, blanks as {{1}}, {{2}}…, and which blank each number is
+    # ("name,job,status,link,shop"), in the order they first appear.
+    content = models.CharField(max_length=1024)
+    params = models.CharField(max_length=80)
+    provider_id = models.CharField(max_length=120, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING)
+    # WhatsApp's reason for a rejection, or the provider's error on a failed submission.
+    reason = models.CharField(max_length=500, blank=True)
+    checked_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "whatsapp_templates"
+        ordering = ["key", "lang", "version"]
+        constraints = [models.UniqueConstraint(fields=["key", "lang", "version"], name="one_template_per_message_language_version")]
+
+
+class IncomingMessage(models.Model):
+    """A WhatsApp message a customer sent to the shop's number. Kept so a delivery that
+    Gupshup repeats is answered once, and so replies to one phone can be spaced out."""
+
+    wa_message_id = models.CharField(max_length=200, unique=True)
+    phone = models.CharField(max_length=20, db_index=True)
+    text = models.CharField(max_length=500, blank=True)
+    # What was sent back: "status", "not_found", or "" when no reply went (spaced out, or it failed).
+    replied = models.CharField(max_length=20, blank=True)
+    received_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "incoming_messages"
+
+
+class IncomingLink(models.Model):
+    """Set once the shop's number has been told to deliver its incoming messages here."""
+
+    callback_url = models.CharField(max_length=300)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "incoming_links"
