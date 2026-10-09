@@ -21,6 +21,10 @@ CATEGORIES = [
     {"key": "door", "label": "Doors", "fields": ["thickness", "size", "qty"], "unit": "pcs",
      "thickness": ["30 mm", "32 mm", "35 mm"],
      "size": ["7 × 3 ft", "7 × 2.5 ft", "6.5 × 3 ft", "6.5 × 2.5 ft"]},
+    # Anything the shop sells outside the lists above, named by hand. `labels` renames the
+    # two details it borrows, on the form only.
+    {"key": "other", "label": "Other", "fields": ["brand", "size", "qty"], "unit": "pcs",
+     "labels": {"brand": "Item", "size": "Size / details"}, "brand": [], "size": []},
 ]
 CATEGORY_BY_KEY = {c["key"]: c for c in CATEGORIES}
 CATEGORY_KEYS = list(CATEGORY_BY_KEY)
@@ -39,25 +43,25 @@ SHOP = {
 TEMPLATE_DEFAULTS = {
     "work": {
         "title": "Worker's daily work", "to": "Each worker, every morning",
-        "blanks": ["name", "date", "duty", "jobs", "shop"], "required": ["duty", "jobs"],
-        "en": "Namaste {name}, your work at {shop} for {date}: {duty}. Job cards waiting for you: {jobs}. "
+        "blanks": ["name", "date", "duty", "orders", "shop"], "required": ["duty", "orders"],
+        "en": "Namaste {name}, your work at {shop} for {date}: {duty}. Orders waiting for you: {orders}. "
               "Tick each one on the dashboard when it is done.",
-        "hi": "नमस्ते {name}, {date} को {shop} में आपका काम: {duty}। आपके जॉब कार्ड: {jobs}। "
+        "hi": "नमस्ते {name}, {date} को {shop} में आपका काम: {duty}। आपके ऑर्डर: {orders}। "
               "काम पूरा होने पर डैशबोर्ड पर टिक करें।",
     },
     "thanks": {
-        "title": "Thank-you when the order is taken", "to": "The customer, by itself, the moment the job card is saved",
-        "blanks": ["name", "job", "link", "shop"], "required": ["job"],
-        "en": "Namaste {name}, thank you for your order at {shop}. Your job card number is {job}. "
+        "title": "Thank-you when the order is taken", "to": "The customer, by itself, the moment the order is saved",
+        "blanks": ["name", "order", "link", "shop"], "required": ["order"],
+        "en": "Namaste {name}, thank you for your order at {shop}. Your order number is {order}. "
               "Track your order any time: {link} You can also message us on this number to know where it has reached.",
-        "hi": "नमस्ते {name}, {shop} से ऑर्डर करने के लिए धन्यवाद। आपका जॉब कार्ड नंबर {job} है। "
+        "hi": "नमस्ते {name}, {shop} से ऑर्डर करने के लिए धन्यवाद। आपका ऑर्डर नंबर {order} है। "
               "अपना ऑर्डर यहाँ देखें: {link} ऑर्डर कहाँ तक पहुँचा, यह जानने के लिए इसी नंबर पर संदेश भेजें।",
     },
     "update": {
-        "title": "Order update to the customer", "to": "The customer, when someone presses the WhatsApp button on the job card",
-        "blanks": ["name", "job", "status", "link", "shop"], "required": ["job", "status"],
-        "en": "Namaste {name}, your order {job} at {shop} is now: {status}. Track it any time: {link} Thank you.",
-        "hi": "नमस्ते {name}, {shop} में आपका ऑर्डर {job} अब इस स्थिति में है: {status}। यहाँ देखें: {link} धन्यवाद।",
+        "title": "Order update to the customer", "to": "The customer, when someone presses the WhatsApp button on the order",
+        "blanks": ["name", "order", "status", "link", "shop"], "required": ["order", "status"],
+        "en": "Namaste {name}, your order {order} at {shop} is now: {status}. Track it any time: {link} Thank you.",
+        "hi": "नमस्ते {name}, {shop} में आपका ऑर्डर {order} अब इस स्थिति में है: {status}। यहाँ देखें: {link} धन्यवाद।",
     },
 }
 
@@ -66,4 +70,5 @@ def item_line(item):
     """One item as a customer reads it: 'Plywood: Austin Marine · 19 mm · 8 × 4 ft × 24 sheets'."""
     category = CATEGORY_BY_KEY[item.category]
     details = [getattr(item, f) for f in category["fields"] if f != "qty"]
-    return f"{category['label']}: {' · '.join(d for d in details if d)} × {item.qty} {category['unit']}"
+    named = "" if category["key"] == "other" else f"{category['label']}: "      # an "other" item is named by its own first detail
+    return f"{named}{' · '.join(d for d in details if d)} × {item.qty} {category['unit']}"

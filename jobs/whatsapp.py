@@ -1,8 +1,8 @@
 """WhatsApp from the shop's own number.
 
 Three things happen here, and nothing else is ever sent:
-- a thank-you goes to the customer by itself when their job card is saved;
-- an order update goes when someone presses the WhatsApp button on a job card;
+- a thank-you goes to the customer by itself when their order is saved;
+- an order update goes when someone presses the WhatsApp button on an order;
 - a customer who writes to the number is told where their order has reached.
 
 The first two reach people who have not written first, which WhatsApp only allows for a
@@ -33,8 +33,8 @@ LANGS = ("en", "hi")
 BLANK = re.compile(r"\{(\w+)\}")
 # What WhatsApp's reviewer sees in place of each blank.
 SAMPLE = {
-    "en": {"name": "Ramesh Gupta", "job": "WS-1043", "status": "Material received", "link": "Ab3dE6gH9jK2mN5p", "shop": SHOP["name"]},
-    "hi": {"name": "रमेश गुप्ता", "job": "WS-1043", "status": "माल गोदाम में आ गया", "link": "Ab3dE6gH9jK2mN5p", "shop": SHOP["name"]},
+    "en": {"name": "Ramesh Gupta", "order": "WS-1043", "status": "Material received", "link": "Ab3dE6gH9jK2mN5p", "shop": SHOP["name"]},
+    "hi": {"name": "रमेश गुप्ता", "order": "WS-1043", "status": "माल गोदाम में आ गया", "link": "Ab3dE6gH9jK2mN5p", "shop": SHOP["name"]},
 }
 WHAT = {"thanks": "the thank-you message", "update": "an order update"}
 # A provider status → ours. Anything unknown is treated as still pending, never guessed approved.
@@ -191,7 +191,8 @@ def status_view():
                 "edited": bool(row) and to_numbered(current[key][lang])[0] != row.content,
             }
     return {"ready": ready(), "can_reply": bool(settings.WHATSAPP_WEBHOOK_SECRET),
-            "replies_on": IncomingLink.objects.exists(), "messages": messages}
+            "replies_on": IncomingLink.objects.exists(), "via_assistant": bool(settings.ORDER_STATUS_SECRET),
+            "messages": messages}
 
 
 # ---------------------------------------------------------------- sending to the customer
@@ -204,7 +205,7 @@ def _reached(job):
 
 def _values(job, lang):
     stage = _reached(job)
-    return {"name": job.customer_name, "job": job.code, "link": job.track_token, "shop": SHOP["name"],
+    return {"name": job.customer_name, "order": job.code, "link": job.track_token, "shop": SHOP["name"],
             "status": stage["labelHi"] if lang == "hi" else stage["label"]}
 
 
@@ -234,7 +235,7 @@ def send_to_customer(job, kind, actor=None):
 
 
 def send_thanks(job):
-    """Called once, when a job card is saved. Never raises: a card must be saved whether or
+    """Called once, when an order is saved. Never raises: an order must be saved whether or
     not the message goes. Returns `(sent, reason)`."""
     if not ready():
         return False, "WhatsApp sending is not set up yet."
@@ -242,7 +243,7 @@ def send_thanks(job):
         send_to_customer(job, "thanks")
     except Denied as exc:
         return False, str(exc)
-    except Exception:  # noqa: BLE001 — a surprise here must not lose the job card
+    except Exception:  # noqa: BLE001 — a surprise here must not lose the order
         log.exception("Thank-you for %s failed", job.code)
         return False, "Something went wrong while sending."
     return True, ""
@@ -255,6 +256,9 @@ def connect_incoming(actor):
     only for a number used by this shop alone: every message to it will be answered from here."""
     _require_owner(actor, "switch on replies")
     _require_ready()
+    if settings.ORDER_STATUS_SECRET:
+        # The assistant on this number already answers; a second answerer would reply twice.
+        raise Denied("Customers are already answered by the assistant on this number.")
     if not settings.WHATSAPP_WEBHOOK_SECRET:
         raise Denied("Set WHATSAPP_WEBHOOK_SECRET in the service's environment first.")
     callback = f"{settings.PUBLIC_URL}/webhooks/whatsapp/"

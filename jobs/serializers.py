@@ -20,6 +20,14 @@ class ItemSerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=1, max_value=100000)
 
 
+def _named(items):
+    """An item outside the lists has nothing but its name to say what it is."""
+    for item in items:
+        if item["category"] == "other" and not (item.get("brand") or "").strip():
+            raise serializers.ValidationError("Give every \"Other\" item a name.")
+    return items
+
+
 class JobFieldsMixin:
     def validate(self, attrs):
         for name, value in attrs.items():
@@ -33,6 +41,9 @@ class JobCreateSerializer(JobFieldsMixin, serializers.ModelSerializer):
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False)
     advance = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False)
     items = ItemSerializer(many=True, allow_empty=False, max_length=50)
+
+    def validate_items(self, items):
+        return _named(items)
 
     class Meta:
         model = Job
@@ -96,6 +107,11 @@ class SentSerializer(serializers.Serializer):
 
 class MessageSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=["thanks", "update"])
+
+
+class ReplySerializer(serializers.Serializer):
+    # 4096 is WhatsApp's own limit for a text message.
+    body = serializers.CharField(max_length=4096, trim_whitespace=True)
 
 
 class WordingSerializer(serializers.Serializer):

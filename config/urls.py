@@ -15,6 +15,9 @@ api_v1 = [
     path("whatsapp/templates/<str:key>/<str:lang>/submit/", api.whatsapp_submit),
     path("whatsapp/refresh/", api.whatsapp_refresh),
     path("whatsapp/replies/", api.whatsapp_replies),
+    path("chats/", api.chats_list),
+    path("chats/<uuid:chat_id>/", api.chat_detail),
+    path("chats/<uuid:chat_id>/reply/", api.chat_reply),
     path("staff/", api.staff),
     path("staff/<int:user_id>/", api.staff_member),
 ]
@@ -25,6 +28,7 @@ urlpatterns = [
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("t/<str:token>/", views.track, name="track"),
     path("webhooks/whatsapp/", views.whatsapp_webhook),
+    path("hooks/order-status/", views.order_status_hook),
     path("healthz", views.healthz),
     path("api/v1/", include(api_v1)),
 ]

@@ -40,17 +40,17 @@ JOBS = [  # customer, phone, site, carpenter, mode, due in days, items, value, a
 
 
 class Command(BaseCommand):
-    """Sample people and job cards for trying the dashboard on your own computer.
-    Refuses to run on a database that already has job cards, so it cannot touch real data."""
+    """Sample people and orders for trying the dashboard on your own computer.
+    Refuses to run on a database that already has orders, so it cannot touch real data."""
 
-    help = "Fill an empty local database with sample staff and job cards. Needs DEMO_PASSWORD."
+    help = "Fill an empty local database with sample staff and orders. Needs DEMO_PASSWORD."
 
     def handle(self, *args, **options):
         password = os.environ.get("DEMO_PASSWORD", "")
         if len(password) < 8:
             raise CommandError("Set DEMO_PASSWORD (8 or more characters); every sample account gets it.")
         if Job.objects.exists():
-            raise CommandError("This database already has job cards; not adding sample data.")
+            raise CommandError("This database already has orders; not adding sample data.")
 
         def person(username, name, role, phone="", lang="en"):
             user, created = User.objects.get_or_create(username=username, defaults={"name": name, "role": role, "phone": phone, "lang": lang})
@@ -82,4 +82,4 @@ class Command(BaseCommand):
                 AuditEntry.objects.create(job=job, actor=who, actor_name=who.name, created_at=at, stage=stage,
                                           action=AuditEntry.CREATED if stage == STAGE_KEYS[0] else AuditEntry.TICKED)
         self.stdout.write(self.style.SUCCESS(
-            f"Added {len(JOBS)} job cards. Sign in as piyush (owner) or {', '.join(w[0] for w in WORKERS)} (workers)."))
+            f"Added {len(JOBS)} orders. Sign in as piyush (owner) or {', '.join(w[0] for w in WORKERS)} (workers)."))

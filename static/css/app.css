@@ -1,6 +1,6 @@
 /* ------------------------------------------------------------------
-   WoodStar Ply Lam — job card dashboard.
-   Every order is a job card that moves through five steps; each day
+   WoodStar Ply Lam — order dashboard.
+   Every order is an order that moves through five steps; each day
    the owner gives every worker a duty, each worker ticks the steps of
    their duty, and the customer follows the card from a link.
 ------------------------------------------------------------------- */
@@ -182,6 +182,41 @@ label.f input:focus,label.f select:focus,label.f textarea:focus,.line input:focu
   .nav{top:0}
   main{padding:16px}
   .team{grid-template-columns:1fr}
+}
+
+/* customer chats */
+.chats{display:grid;grid-template-columns:330px 1fr;gap:14px;margin-top:16px;height:calc(100vh - 235px);min-height:440px}
+.chatlist,.thread{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.chatlist{overflow-y:auto}
+.chatrow{display:grid;grid-template-columns:1fr auto;gap:2px 10px;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;padding:12px 14px;cursor:pointer;width:100%}
+.chatrow:hover{background:var(--surface-2)}
+.chatrow.on{background:#f6efe2}
+.chatrow .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatrow.new .nm::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--wa);margin-right:7px}
+.chatrow .tm{font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+.chatrow .ph{font-size:12.5px;color:var(--ink-3)}
+.chatrow .tags{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.thread__head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.thread__head .grow{flex:1;min-width:150px}
+.thread__head a.pill{text-decoration:none}
+.msgs{flex:1;overflow-y:auto;padding:16px;background:#f3efe8;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:min(78%,560px);display:flex;flex-direction:column;align-self:flex-start}
+.msg .b{padding:9px 12px;border-radius:4px 14px 14px 14px;background:#fff;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13.5px;line-height:1.45}
+.msg small{font-size:10.5px;color:var(--ink-3);margin-top:3px}
+.msg.ours{align-self:flex-end;align-items:flex-end}
+.msg.ours .b{background:#e7f6dc;border-radius:14px 4px 14px 14px;color:#16240f}
+.msg.failed .b{background:var(--bad-bg);color:var(--bad)}
+.reply{border-top:1px solid var(--line);padding:12px;display:flex;gap:10px;align-items:flex-end}
+.reply textarea{flex:1;border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;resize:none;min-height:46px;max-height:140px}
+.reply textarea:focus{outline:2px solid var(--gold-2);border-color:var(--gold)}
+.chats .empty{margin:auto;color:var(--ink-3);padding:30px;text-align:center}
+.chatback{display:none}
+.nav button .pill{margin-left:4px}
+@media (max-width:980px){
+  .chats{grid-template-columns:1fr;height:auto;min-height:0}
+  .chats.has-open .chatlist,.chats:not(.has-open) .thread{display:none}
+  .thread{height:calc(100vh - 200px);min-height:420px}
+  .chatback{display:inline-flex}
 }
 
 /* signed-in strip */

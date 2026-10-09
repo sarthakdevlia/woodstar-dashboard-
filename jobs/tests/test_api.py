@@ -231,7 +231,7 @@ class StaffTests(ApiTestCase):
 class WordingTests(ApiTestCase):
     def test_owner_saves_and_resets_wording(self):
         owner = self.client_for(self.owner)
-        text = "Namaste {name}, order {job} is now {status}. See {link} for details."
+        text = "Namaste {name}, order {order} is now {status}. See {link} for details."
         res = owner.put("/api/v1/templates/update/en/", {"body": text}, format="json")
         self.assertEqual(res.json()["data"]["update"]["en"], text)
         self.assertEqual(owner.get("/api/v1/state/").json()["data"]["templates"]["update"]["en"], text)
@@ -240,10 +240,10 @@ class WordingTests(ApiTestCase):
 
     def test_wording_whatsapp_would_refuse_is_not_saved(self):
         owner = self.client_for(self.owner)
-        for text, why in (("{name}, order {job} is now {status}, thank you very much.", "begin or end"),
-                          ("Namaste, your order {job} has moved on, thank you.", "{status}"),
-                          ("Namaste {customer}, order {job} is now {status}, thank you.", "{customer}"),
-                          ("Order {job} is {status} ok.", "Too short")):
+        for text, why in (("{name}, order {order} is now {status}, thank you very much.", "begin or end"),
+                          ("Namaste, your order {order} has moved on, thank you.", "{status}"),
+                          ("Namaste {customer}, order {order} is now {status}, thank you.", "{customer}"),
+                          ("Order {order} is {status} ok.", "Too short")):
             res = owner.put("/api/v1/templates/update/en/", {"body": text}, format="json")
             self.assertEqual(res.status_code, 403, text)
             self.assertIn(why, res.json()["message"])
@@ -257,7 +257,7 @@ class TrackingTests(ApiTestCase):
     def test_customer_link_needs_no_login_and_follows_the_ticks(self):
         job = self.new_job()
         res = self.client.get(job["track"])
-        self.assertContains(res, "Job card WS-1001")
+        self.assertContains(res, "Order WS-1001")
         self.assertContains(res, "Next: Material ordered")
         self.assertContains(res, "Plywood: Austin Marine · 19 mm · 8 × 4 ft × 24 sheets")
         self.assertNotContains(res, "118")                # no money on the customer's page

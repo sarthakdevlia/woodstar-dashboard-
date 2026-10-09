@@ -5,7 +5,7 @@
   <div class="phone">
     <div class="phone__head">
       <div class="logo">{% include "_mark.html" %}<b>WoodStar</b><small>PLY · LAM</small></div>
-      <p style="margin:14px 0 2px;color:#cbbfb1;font-size:12.5px">Job card {{ job.code }}</p>
+      <p style="margin:14px 0 2px;color:#cbbfb1;font-size:12.5px">Order {{ job.code }}</p>
       <h1 style="margin:0;font-size:22px">{% if complete %}Delivered ✓{% else %}{{ status }}{% endif %}</h1>
       <p style="margin:4px 0 0;color:#cbbfb1;font-size:13px">
         {% if complete %}Thank you for buying from WoodStar.{% else %}Next: {{ next }} · promised by {{ job.due|date:"D, j M" }}{% endif %}

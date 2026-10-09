@@ -158,6 +158,18 @@ WHATSAPP_APP_ID = os.environ.get("WHATSAPP_APP_ID", "")
 # Gupshup replays this as a header on every incoming message; the webhook refuses anything without it.
 WHATSAPP_WEBHOOK_SECRET = os.environ.get("WHATSAPP_WEBHOOK_SECRET", "")
 WHATSAPP_READY = all([WHATSAPP_PARTNER_EMAIL, WHATSAPP_PARTNER_SECRET, WHATSAPP_APP_ID])
+# When the shop's number is answered by the SD Ventures assistant, that assistant asks this
+# dashboard where a customer's order is (/hooks/order-status/) and sends this secret with the
+# question. Same value on both sides. Empty: the address refuses everyone.
+ORDER_STATUS_SECRET = os.environ.get("ORDER_STATUS_SECRET", "")
+
+# Customer chats (jobs/chats.py): the shop's WhatsApp conversations live on the SD Ventures
+# platform. PLATFORM_EMAIL / PLATFORM_PASSWORD are a login of the shop's own on that platform;
+# the dashboard reads and answers chats as that user. Without them the screen says so.
+PLATFORM_URL = os.environ.get("PLATFORM_URL", "https://www.sdventure.in").rstrip("/")
+PLATFORM_EMAIL = os.environ.get("PLATFORM_EMAIL", "")
+PLATFORM_PASSWORD = os.environ.get("PLATFORM_PASSWORD", "")
+CHATS_READY = bool(PLATFORM_EMAIL and PLATFORM_PASSWORD)
 
 # Where customers reach this dashboard: tracking links in messages, and the address Gupshup
 # delivers incoming messages to. Defaults to the first real host in ALLOWED_HOSTS.

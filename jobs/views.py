@@ -1,10 +1,12 @@
+import hmac
 import json
 import logging
 
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
-from django.http import Http404, HttpResponse
+from django.conf import settings
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -110,6 +112,25 @@ def whatsapp_webhook(request):
     except Exception:  # noqa: BLE001 — never make Gupshup retry over our own bug
         log.exception("Incoming WhatsApp delivery could not be handled")
     return HttpResponse("", content_type="text/plain")
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def order_status_hook(request):
+    """Asked by the assistant that answers the shop's WhatsApp number: "this phone has
+    written in — where is their order?". Answers with the words to send back, or that no
+    order is known for that number. Public, so it speaks only to a caller with the secret."""
+    secret, given = settings.ORDER_STATUS_SECRET, request.headers.get("X-Order-Status-Secret")
+    if not secret or given is None or not hmac.compare_digest(given, secret):
+        return JsonResponse({"found": False}, status=403)
+    try:
+        phone = "".join(c for c in str(json.loads(request.body or b"{}").get("phone", "")) if c.isdigit())
+    except (ValueError, AttributeError):
+        phone = ""
+    if len(phone) < 10:
+        return JsonResponse({"found": False}, status=400)
+    kind, text = whatsapp.reply_for(phone)
+    return JsonResponse({"found": True, "text": text} if kind == "status" else {"found": False})
 
 
 def healthz(request):

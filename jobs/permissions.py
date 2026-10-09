@@ -26,8 +26,15 @@ def check_tick(is_owner, duties, stage, done, on_duty=()):
     return None
 
 
-def check_create(is_owner, duties):
-    """Job cards are written at the counter: by the owner, or whoever is on Order received."""
+def check_chats(is_owner, duties):
+    """Customer chats are the counter's work: the owner, or whoever is on Order received."""
     if is_owner or STAGE_KEYS[0] in duties:
         return None
-    return f'Job cards are created by whoever has "{STAGE_LABELS[STAGE_KEYS[0]]}" as their duty today, or by the owner.'
+    return f'Customer chats are answered by the owner, or by whoever has "{STAGE_LABELS[STAGE_KEYS[0]]}" as their duty today.'
+
+
+def check_create(is_owner, duties):
+    """Orders are written at the counter: by the owner, or whoever is on Order received."""
+    if is_owner or STAGE_KEYS[0] in duties:
+        return None
+    return f'Orders are created by whoever has "{STAGE_LABELS[STAGE_KEYS[0]]}" as their duty today, or by the owner.'

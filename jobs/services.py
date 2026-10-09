@@ -106,7 +106,7 @@ def sent_for(day):
     return {s.user_id: s.sent_at for s in WorkSent.objects.filter(day=day)}
 
 
-# ---------------------------------------------------------------- job cards
+# ---------------------------------------------------------------- orders
 
 def _locked(job_number):
     return Job.objects.select_for_update().get(number=job_number)
@@ -147,17 +147,17 @@ def create_job(user, fields, items):
                     item.job = job
                     item.save()
                 _audit(job, user, AuditEntry.CREATED)
-                # Writing the card is the first step.
+                # Taking the order is the first step.
                 StageTick.objects.create(job=job, stage=STAGE_KEYS[0], done_by=user, done_by_name=user.name, done_at=now)
                 return job
         except IntegrityError:
             continue
-    raise Denied("Could not save the job card. Please try again.")
+    raise Denied("Could not save the order. Please try again.")
 
 
 @transaction.atomic
 def update_job(user, job_number, fields):
-    _require_owner(user, "edit a job card")
+    _require_owner(user, "edit an order")
     job = _locked(job_number)
     changed = [name for name, value in fields.items() if getattr(job, name) != value]
     if not changed:
@@ -194,7 +194,7 @@ def set_stage(user, job_number, stage, complete):
 def audit_text(entry):
     stage = STAGE_LABELS.get(entry.stage, "")
     return {
-        AuditEntry.CREATED: f"created the job card ({STAGE_LABELS[STAGE_KEYS[0]]})",
+        AuditEntry.CREATED: f"created the order ({STAGE_LABELS[STAGE_KEYS[0]]})",
         AuditEntry.EDITED: f"edited {entry.detail}",
         AuditEntry.TICKED: f"marked {stage}",
         AuditEntry.REVERSED: f"undid {stage}",

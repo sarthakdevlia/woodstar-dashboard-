@@ -8,18 +8,19 @@ from rest_framework.decorators import api_view
 from staff import services as staff_services
 from staff.models import User
 
-from . import services, whatsapp
+from . import chats, services, whatsapp
 from .catalog import TEMPLATE_DEFAULTS
 from .models import Job, StageTick
+from .permissions import check_chats
 from .responses import fail, ok
 from .serializers import (
-    DutySerializer, JobCreateSerializer, JobUpdateSerializer, MessageSerializer, SentSerializer,
+    DutySerializer, JobCreateSerializer, JobUpdateSerializer, MessageSerializer, ReplySerializer, SentSerializer,
     StaffCreateSerializer, StaffUpdateSerializer, WordingSerializer, job_to_dict, me_to_dict, staff_to_dict,
     worker_to_dict,
 )
 from .stages import STAGE_KEYS, WORKER
 
-# Delivered cards stay on the board for two weeks, then only show with scope=all.
+# Delivered orders stay on the board for two weeks, then only show with scope=all.
 DELIVERED_VISIBLE_DAYS = 14
 JOBS_MAX = 500
 STAFF_MAX = 200
@@ -65,6 +66,7 @@ def state(request):
     me = me_to_dict(request.user)
     me["duties"] = services.duties_of(request.user)
     return ok({"me": me, **_team(), "templates": services.wordings(), "whatsapp": whatsapp.status_view(),
+               "chats": {"ready": chats.ready(), "allowed": check_chats(request.user.is_owner, me["duties"]) is None},
                "jobs": _jobs(request)})
 
 
@@ -73,7 +75,7 @@ def jobs(request):
     data = _validated(JobCreateSerializer, request.data)
     items = data.pop("items")
     job = services.create_job(request.user, data, items)
-    # The thank-you goes by itself; the card is saved whether or not it could be sent.
+    # The thank-you goes by itself; the order is saved whether or not it could be sent.
     sent, reason = whatsapp.send_thanks(job)
     detail = _job_detail(request, job.number)
     detail["thanks"] = {"sent": sent, "reason": reason}
@@ -99,7 +101,7 @@ def job_stage(request, number, stage):
 
 @api_view(["POST"])
 def job_message(request, number):
-    """The WhatsApp button on a job card: send the customer the message now, from the shop's number."""
+    """The WhatsApp button on an order: send the customer the message now, from the shop's number."""
     kind = _validated(MessageSerializer, request.data)["kind"]
     job = Job.objects.prefetch_related("ticks").get(number=number)
     what = whatsapp.send_to_customer(job, kind, actor=request.user)
@@ -156,6 +158,40 @@ def whatsapp_refresh(request):
 def whatsapp_replies(request):
     whatsapp.connect_incoming(request.user)
     return ok(_whatsapp_state(), "Customers who message the number will now be told where their order is.")
+
+
+def _chats_open_to(user):
+    reason = check_chats(user.is_owner, services.duties_of(user))
+    if reason:
+        raise services.Denied(reason)
+    if not chats.ready():
+        raise services.Denied("Customer chats are not connected yet.")
+
+
+def _chat_call(action, *args):
+    try:
+        return action(*args)
+    except chats.ChatError as exc:
+        raise services.Denied(str(exc)) from exc
+
+
+@api_view(["GET"])
+def chats_list(request):
+    _chats_open_to(request.user)
+    return ok({"results": _chat_call(chats.list_chats)})
+
+
+@api_view(["GET"])
+def chat_detail(request, chat_id):
+    _chats_open_to(request.user)
+    return ok(_chat_call(chats.get_chat, chat_id))
+
+
+@api_view(["POST"])
+def chat_reply(request, chat_id):
+    _chats_open_to(request.user)
+    body = _validated(ReplySerializer, request.data)["body"]
+    return ok(_chat_call(chats.send_reply, chat_id, body), "Reply sent.")
 
 
 @api_view(["GET", "POST"])

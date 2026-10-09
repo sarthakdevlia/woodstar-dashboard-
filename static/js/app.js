@@ -1,7 +1,7 @@
 "use strict";
 
 /* ================================================================
-   WoodStar job cards — the browser side.
+   WoodStar orders — the browser side.
    The server decides everything that matters (who may tick what, who
    sees money); this file draws the screens and mirrors the rules only
    to grey out buttons. Categories, steps and standard wording arrive
@@ -13,7 +13,7 @@ const FIELD_LABEL = {brand:'Brand', thickness:'Thickness', size:'Size', pack:'Pa
 const REFRESH_MS = 25000;                  // how often the page checks for other people's ticks
 
 let ME = Object.assign({duties:[]}, BOOT.me);
-let DB = {jobs:[], workers:[], roster:{}, sent:{}, templates:{}, whatsapp:null, staff:null};
+let DB = {jobs:[], workers:[], roster:{}, sent:{}, templates:{}, whatsapp:null, chats:null, staff:null};
 let loaded = false;
 
 /* ================================================================
@@ -45,10 +45,11 @@ function takeJob(j){ const i = DB.jobs.findIndex(x => x.no === j.no); if (i < 0)
 async function refresh(quiet){
   try {
     const s = await api('GET', 'state/' + (state.all ? '?scope=all' : ''));
-    ME = s.me; DB.jobs = s.jobs; DB.templates = s.templates; DB.whatsapp = s.whatsapp; takeTeam(s); loaded = true;
+    ME = s.me; DB.jobs = s.jobs; DB.templates = s.templates; DB.whatsapp = s.whatsapp; DB.chats = s.chats; takeTeam(s); loaded = true;
     // don't redraw under someone who is typing
     const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.id !== 'q';
-    if (!quiet || !typing) render();
+    if (!quiet || (!typing && state.view !== 'chats')) render();          // the chat screen repaints itself, piece by piece
+    else nav();
     if (quiet && state.view === 'job' && state.job) loadJob(state.job, true);   // someone else may have ticked: refresh its audit trail too
   } catch (e) { if (!quiet) toast(e.message, true); }
 }
@@ -74,13 +75,14 @@ function when(iso){
   if (diff < 48) return `Yesterday, ${t}`;
   return d.toLocaleDateString('en-IN', {day:'numeric', month:'short'}) + ', ' + t;
 }
-const itemsShort = j => j.items.map(i => `${cat(i.cat).label} ${i.thickness || i.size || i.pack || ''} × ${i.qty}`).join(', ');
+const itemsShort = j => j.items.map(i => `${i.cat === 'other' ? i.brand : cat(i.cat).label} ${i.thickness || i.size || i.pack || ''} × ${i.qty}`).join(', ');
+const fieldLabel = (c, f) => (c.labels && c.labels[f]) || FIELD_LABEL[f];        // "Other" calls its two details Item and Size / details
 function toast(msg, bad){ const t = $('#toast'); t.textContent = msg; t.className = 'show' + (bad ? ' bad' : ''); clearTimeout(t._h); t._h = setTimeout(() => t.className = '', 3600); }
 const trackUrl = j => location.origin + j.track;
 const fill = (text, values) => text.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
 
 /* who is signed in, and what they may tick today */
-const state = {view:'board', job:null, detail:null, q:'', all:false, draft:null, tplLang:{work:'en', thanks:'en', update:'en'}, tplDraft:{}};
+const state = {view:'board', job:null, detail:null, q:'', all:false, draft:null, lastCat:'ply', tplLang:{work:'en', thanks:'en', update:'en'}, tplDraft:{}};
 const isOwner = () => ME.is_owner;
 const duties = id => DB.roster[id] || [];
 const myDuties = () => ME.duties || [];
@@ -90,10 +92,10 @@ const wording = (key, lang) => (DB.templates[key] || TEMPLATE_DEFAULTS[key])[lan
 
 function customerMessage(j){
   const lang = j.lang === 'hi' ? 'hi' : 'en', st = statusOf(j);
-  return fill(wording('update', lang), {name:j.customer.name, job:j.no, status:lang === 'hi' ? st.labelHi : st.label, link:trackUrl(j), shop:SHOP.name});
+  return fill(wording('update', lang), {name:j.customer.name, order:j.no, status:lang === 'hi' ? st.labelHi : st.label, link:trackUrl(j), shop:SHOP.name});
 }
 const waCustomer = j => `https://wa.me/91${j.customer.phone}?text=${encodeURIComponent(customerMessage(j))}`;
-/* The WhatsApp button on a job card. With the shop's own number connected it sends the update
+/* The WhatsApp button on an order. With the shop's own number connected it sends the update
    from that number; until then it opens WhatsApp on this phone with the message written. */
 const waReady = () => !!(DB.whatsapp && DB.whatsapp.ready);
 const waButton = j => waReady()
@@ -104,7 +106,7 @@ function workMessage(w){
   // one line each: a template blank cannot hold line breaks
   const duty = d.map(k => hi ? stage(k).dutyHi : stage(k).duty).join(hi ? ' और ' : ' and ') || (hi ? 'आज कोई काम नहीं दिया गया' : 'no duty set for today');
   const jobs = waitingFor(d.filter(k => k !== 'received')).map(j => `${j.no} ${j.customer.name}`).join('; ') || (hi ? 'अभी कोई नहीं' : 'none yet');
-  return fill(wording('work', w.lang) || wording('work', 'en'), {name:w.name, date:new Date().toLocaleDateString(hi ? 'hi-IN' : 'en-IN', {day:'numeric', month:'long'}), duty, jobs, shop:SHOP.name});
+  return fill(wording('work', w.lang) || wording('work', 'en'), {name:w.name, date:new Date().toLocaleDateString(hi ? 'hi-IN' : 'en-IN', {day:'numeric', month:'long'}), duty, orders:jobs, shop:SHOP.name});
 }
 
 /* ================================================================
@@ -135,17 +137,19 @@ async function toggle(j, key){
    Views
 ================================================================= */
 const VIEWS = [
-  {k:'board', t:'Floor board'}, {k:'list', t:'All job cards'}, {k:'new', t:'+ New job card'}, {k:'team', t:"Today's team"},
-  {k:'messages', t:'WhatsApp messages', owner:true}, {k:'staff', t:'Staff & logins', owner:true},
+  {k:'board', t:'Floor board'}, {k:'list', t:'All orders'}, {k:'new', t:'+ New order'}, {k:'team', t:"Today's team"},
+  {k:'chats', t:'Customer chats', chats:true}, {k:'messages', t:'WhatsApp messages', owner:true}, {k:'staff', t:'Staff & logins', owner:true},
 ];
 function nav(){
-  $('#nav').innerHTML = VIEWS.filter(v => !v.owner || isOwner()).map(v => `<button data-view="${v.k}" class="${state.view === v.k || (v.k === 'list' && state.view === 'job') ? 'on' : ''}">${v.t}</button>`).join('');
+  const fresh = chat.list ? chat.list.filter(isNew).length : 0;
+  $('#nav').innerHTML = VIEWS.filter(v => (!v.owner || isOwner()) && (!v.chats || chatsAllowed())).map(v => `<button data-view="${v.k}" class="${state.view === v.k || (v.k === 'list' && state.view === 'job') ? 'on' : ''}">${v.t}${v.chats && fresh ? ` <span class="pill ok">${fresh}</span>` : ''}</button>`).join('');
   $('#who-duty').textContent = isOwner() ? 'Owner' : (myDuties().map(k => stage(k).label).join(' + ') || 'no duty today');
 }
 function go(view, job){
   state.view = view; state.job = job || null; location.hash = job ? `${view}/${job}` : view;
   if (view === 'job') loadJob(job);
   if (view === 'staff') loadStaff();
+  if (view === 'chats') openChats(job);
   render(); scrollTo(0, 0);
 }
 async function loadJob(no, again){
@@ -161,6 +165,79 @@ async function loadStaff(){
   if (!isOwner()) return;
   try { DB.staff = (await api('GET', 'staff/')).results; if (state.view === 'staff') render(); } catch (e) { toast(e.message, true); }
 }
+
+/* ---- customer chats: the shop's WhatsApp conversations, read and answered through the
+   platform that answers the number (jobs/chats.py). Nothing is stored here. */
+const chat = {list:null, error:'', thread:null, draft:''};
+const SEEN_KEY = 'woodstar.chats.seen';
+const seen = (() => { try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || {}; } catch (e) { return {}; } })();
+const isNew = c => seen[c.id] !== c.updated_at;                // changed since this browser last opened it
+const markSeen = c => { seen[c.id] = c.updated_at; try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch (e) {} };
+const chatsAllowed = () => !!(DB.chats && DB.chats.allowed);
+const chatsOn = () => chatsAllowed() && DB.chats.ready;
+const waPhone = p => p.length === 12 ? `+${p.slice(0, 2)} ${p.slice(2, 7)} ${p.slice(7)}` : '+' + p;
+function openChats(id){
+  if (!chatsOn()) return;
+  if (!id || !chat.thread || chat.thread.id !== id) { chat.thread = null; chat.draft = ''; }
+  loadChats(true);
+  if (id) loadChat(id);
+}
+async function loadChats(quiet){
+  if (!chatsOn()) return;
+  try { chat.list = (await api('GET', 'chats/')).results; chat.error = ''; }
+  catch (e) { chat.error = e.message; if (!quiet) toast(e.message, true); }
+  nav();
+  const el = $('#chatlist'); if (el && state.view === 'chats') el.innerHTML = chatListHTML();
+}
+async function loadChat(id, quiet){
+  try {
+    const t = await api('GET', `chats/${id}/`);
+    if (state.view !== 'chats' || state.job !== id) return;
+    const grew = !chat.thread || chat.thread.id !== id || chat.thread.messages.length !== t.messages.length || chat.thread.can_reply !== t.can_reply || chat.thread.staff_handling !== t.staff_handling;
+    chat.thread = t; markSeen(t);
+    if (!quiet) render();
+    else if (grew) {                                               // new messages while it is open: add them without disturbing a half-typed reply
+      const typing = document.activeElement && document.activeElement.id === 'chat-reply';
+      if (typing) { const m = $('#msgs'); m.innerHTML = messagesHTML(t); m.scrollTop = m.scrollHeight; } else render();
+    }
+  } catch (e) { if (!quiet && state.job === id) { chat.thread = {id, missing:true, error:e.message, messages:[]}; render(); } }
+}
+function chatListHTML(){
+  if (chat.error && !chat.list) return `<p class="empty">${esc(chat.error)}</p>`;
+  if (!chat.list) return '<p class="empty">Loading chats…</p>';
+  if (!chat.list.length) return '<p class="empty">Nobody has written yet.</p>';
+  return chat.list.map(c => `<button class="chatrow ${c.id === state.job ? 'on' : ''} ${isNew(c) ? 'new' : ''}" data-chat="${c.id}">
+      <span class="nm">${esc(c.name || waPhone(c.phone))}</span><span class="tm">${when(c.updated_at)}</span>
+      <span class="ph">${waPhone(c.phone)}</span>
+      ${c.orders.length || c.staff_handling ? `<span class="tags">${c.orders.slice(0, 2).map(o => `<span class="pill ${o.done ? 'ok' : ''}">${o.no} · ${esc(o.status)}</span>`).join('')}${c.staff_handling ? '<span class="pill info">Staff replying</span>' : ''}</span>` : ''}
+    </button>`).join('');
+}
+function messagesHTML(t){
+  return t.messages.map(m => `<div class="msg ${m.out ? 'ours' : 'theirs'} ${m.failed ? 'failed' : ''}"><div class="b">${esc(m.body)}${/^https:\/\//.test(m.media) ? `${m.body ? '<br>' : ''}<a href="${esc(m.media)}" target="_blank" rel="noopener">Open the photo or file</a>` : ''}</div>
+      <small>${m.out ? (m.by === 'staff' ? 'Staff' : 'Assistant') + ' · ' : ''}${when(m.at)}${m.failed ? ' · not delivered' : ''}</small></div>`).join('')
+    || '<p class="empty">No messages in this chat yet.</p>';
+}
+function threadHTML(){
+  const t = chat.thread;
+  if (!state.job) return '<p class="empty">Choose a chat on the left to read it and reply.</p>';
+  if (!t) return '<p class="empty">Opening the chat…</p>';
+  if (t.missing) return `<p class="empty">${esc(t.error)}<br><button class="btn btn--sm" data-chatback style="margin-top:10px">Back to all chats</button></p>`;
+  return `<div class="thread__head"><button class="btn btn--sm chatback" data-chatback>← Chats</button>
+      <div class="grow"><b style="font-size:16px">${esc(t.name || waPhone(t.phone))}</b><div class="muted" style="font-size:12.5px">${waPhone(t.phone)}${t.staff_handling ? ' · the assistant is waiting while staff reply' : ''}</div></div>
+      ${t.orders.map(o => `<a class="pill ${o.done ? 'ok' : ''}" href="#job/${o.no}" data-open="${o.no}">${o.no} · ${esc(o.status)}</a>`).join('')}
+      ${myDuties().includes('received') ? '<button class="btn btn--sm" data-chatorder>+ New order</button>' : ''}</div>
+    <div class="msgs" id="msgs">${messagesHTML(t)}</div>
+    ${t.can_reply ? `<div class="reply"><textarea id="chat-reply" rows="2" maxlength="4096" placeholder="Write a reply — it goes from the shop's WhatsApp number">${esc(chat.draft)}</textarea><button class="btn btn--wa" data-chatsend>Send</button></div>`
+      : '<p class="note" style="margin:12px;border-radius:10px">WhatsApp lets the shop reply freely only within 24 hours of the customer\'s last message. This customer has to write first; then you can answer here.</p>'}`;
+}
+function viewChats(){
+  const head = '<h1 class="h1">Customer chats</h1>';
+  if (!chatsAllowed()) return `${head}<p class="sub">Customer chats are answered by the owner, or by whoever has "Order received" as their duty today.</p>`;
+  if (!DB.chats.ready) return `${head}<p class="note" style="margin:14px 0 0">Customer chats are not connected yet. They appear here once the dashboard has been given its sign-in for the WhatsApp assistant (PLATFORM_EMAIL and PLATFORM_PASSWORD in the service settings).</p>`;
+  return `${head}<p class="sub">Everyone who has written to the shop's WhatsApp number. The assistant answers first; a reply from here goes from the same number and the assistant then stays quiet on that chat for a while.</p>
+  <div class="chats ${state.job ? 'has-open' : ''}"><aside class="chatlist" id="chatlist">${chatListHTML()}</aside><section class="thread" id="thread">${threadHTML()}</section></div>`;
+}
+
 function filtered(){
   const q = state.q.trim().toLowerCase();
   return q ? DB.jobs.filter(j => [j.no, j.customer.name, j.customer.phone, j.site].join(' ').toLowerCase().includes(q)) : DB.jobs;
@@ -174,21 +251,21 @@ function viewBoard(){
   const late = open.filter(j => new Date(j.due) < new Date(new Date().toDateString()));
   const due = jobs.reduce((a, j) => a + Math.max(0, (j.amount || 0) - (j.advance || 0)), 0);
   const cols = STAGES.map(s => {
-    const here = jobs.filter(j => statusOf(j).key === s.key).sort((a, b) => a.number - b.number);   // a card sits in the step it has reached
+    const here = jobs.filter(j => statusOf(j).key === s.key).sort((a, b) => a.number - b.number);   // an order sits in the step it has reached
     return `<div class="col"><h3>${esc(s.label)} <span>${here.length}</span></h3>
       ${here.map(j => cardHTML(j, mine)).join('') || '<p class="muted" style="font-size:12px;margin:6px 4px">Nothing here.</p>'}</div>`;
   }).join('');
   const mineCount = isOwner() ? 0 : waitingFor(mine).length;
-  return `<div class="row between"><div><h1 class="h1">Floor board</h1><p class="sub">${isOwner() ? 'Every order, in the step it has reached. Click a card to open it.'
-      : mine.length ? `Your duty today: <b>${mine.map(k => stage(k).label).join(' and ')}</b>. ${mineCount} card${mineCount === 1 ? ' is' : 's are'} waiting for you (outlined in gold).` : 'You have no duty set for today — ask the owner.'}</p></div>
-    ${myDuties().includes('received') ? '<button class="btn btn--gold" data-view="new">+ New job card</button>' : ''}</div>
+  return `<div class="row between"><div><h1 class="h1">Floor board</h1><p class="sub">${isOwner() ? 'Every order, in the step it has reached. Click an order to open it.'
+      : mine.length ? `Your duty today: <b>${mine.map(k => stage(k).label).join(' and ')}</b>. ${mineCount} order${mineCount === 1 ? ' is' : 's are'} waiting for you (outlined in gold).` : 'You have no duty set for today — ask the owner.'}</p></div>
+    ${myDuties().includes('received') ? '<button class="btn btn--gold" data-view="new">+ New order</button>' : ''}</div>
     <div class="kpis">
-      <div class="card kpi"><small>Open job cards</small><b>${open.length}</b></div>
+      <div class="card kpi"><small>Open orders</small><b>${open.length}</b></div>
       <div class="card kpi"><small>Waiting for material to arrive</small><b>${awaiting.length}</b></div>
       <div class="card kpi"><small>Material in, ready to dispatch</small><b>${ready.length}</b></div>
-      ${isOwner() ? `<div class="card kpi"><small>Balance due (cards shown)</small><b class="mono">${rupees(due)}</b></div>` : `<div class="card kpi"><small>Past promised date</small><b>${late.length}</b></div>`}
+      ${isOwner() ? `<div class="card kpi"><small>Balance due (orders shown)</small><b class="mono">${rupees(due)}</b></div>` : `<div class="card kpi"><small>Past promised date</small><b>${late.length}</b></div>`}
     </div>
-    ${jobs.length ? `<div class="board">${cols}</div>` : `<div class="card sec"><b>No job cards yet.</b><p class="sub">${state.q ? 'Nothing matches that search.' : 'The first one starts with "+ New job card".'}</p></div>`}`;
+    ${jobs.length ? `<div class="board">${cols}</div>` : `<div class="card sec"><b>No orders yet.</b><p class="sub">${state.q ? 'Nothing matches that search.' : 'The first one starts with "+ New order".'}</p></div>`}`;
 }
 function cardHTML(j, mine){
   const n = nextStage(j), late = n && new Date(j.due) < new Date(new Date().toDateString());
@@ -202,24 +279,24 @@ function cardHTML(j, mine){
 
 function viewList(){
   const jobs = filtered().slice().sort((a, b) => b.number - a.number);
-  return `<div class="row between"><div><h1 class="h1">All job cards</h1><p class="sub">${jobs.length} card${jobs.length === 1 ? '' : 's'}${state.q ? ` matching "${esc(state.q)}"` : ''}. ${state.all ? 'Showing every card.' : 'Cards delivered more than two weeks ago are hidden.'}
+  return `<div class="row between"><div><h1 class="h1">All orders</h1><p class="sub">${jobs.length} order${jobs.length === 1 ? '' : 's'}${state.q ? ` matching "${esc(state.q)}"` : ''}. ${state.all ? 'Showing every order.' : 'Orders delivered more than two weeks ago are hidden.'}
       <a href="#list" data-all>${state.all ? 'Hide old ones' : 'Show them'}</a></p></div>
-    ${myDuties().includes('received') ? '<button class="btn btn--gold" data-view="new">+ New job card</button>' : ''}</div>
+    ${myDuties().includes('received') ? '<button class="btn btn--gold" data-view="new">+ New order</button>' : ''}</div>
   <div class="card" style="margin-top:16px;overflow-x:auto"><table>
-    <thead><tr><th>Job no.</th><th>Customer</th><th>Items</th><th>Progress</th><th>Now at</th><th>Due</th>${isOwner() ? '<th>Balance</th>' : ''}</tr></thead>
+    <thead><tr><th>Order no.</th><th>Customer</th><th>Items</th><th>Progress</th><th>Now at</th><th>Due</th>${isOwner() ? '<th>Balance</th>' : ''}</tr></thead>
     <tbody>${jobs.map(j => { const n = doneCount(j), st = statusOf(j);
       return `<tr class="click" data-open="${j.no}"><td><b>${j.no}</b></td><td><b>${esc(j.customer.name)}</b><br><span class="muted">${phoneFmt(j.customer.phone)}</span></td>
       <td style="max-width:320px">${esc(itemsShort(j))}</td>
       <td><div class="prog">${STAGES.map(s => `<i class="${j.stages[s.key] ? 'on' : ''}"></i>`).join('')}</div></td>
       <td><span class="pill ${n === STAGES.length ? 'ok' : n >= 3 ? 'info' : ''}">${esc(st.label)}</span></td>
       <td class="mono">${shortDate(j.due)}</td>
-      ${isOwner() ? `<td class="mono">${rupees(Math.max(0, j.amount - j.advance))}</td>` : ''}</tr>`; }).join('') || `<tr><td colspan="7" class="muted">No job cards match.</td></tr>`}</tbody></table></div>`;
+      ${isOwner() ? `<td class="mono">${rupees(Math.max(0, j.amount - j.advance))}</td>` : ''}</tr>`; }).join('') || `<tr><td colspan="7" class="muted">No orders match.</td></tr>`}</tbody></table></div>`;
 }
 
 const currentJob = () => DB.jobs.find(x => x.no === state.job) || (state.detail && state.detail.no === state.job && !state.detail.missing ? state.detail : null);
 function viewJob(){
   const j = currentJob();
-  if (!j) return state.detail && state.detail.missing ? `<p>Job card not found. <a href="#list" data-view="list">Back to all job cards</a></p>` : '<div class="loading">Opening the job card…</div>';
+  if (!j) return state.detail && state.detail.missing ? `<p>Order not found. <a href="#list" data-view="list">Back to all orders</a></p>` : '<div class="loading">Opening the order…</div>';
   const next = nextStage(j), log = state.detail && state.detail.no === j.no ? state.detail.log : null;
   const tiles = STAGES.map(s => {
     const d = j.stages[s.key], v = can(j, s.key), who = onDuty(s.key).map(w => w.name).join(', ');
@@ -229,15 +306,15 @@ function viewJob(){
       <button class="btn btn--sm ${d ? '' : 'btn--dark'}" data-tick="${s.key}" ${v.ok ? '' : 'disabled'} title="${esc(v.ok ? '' : v.msg)}">${d ? 'Undo' : 'Mark done'}</button></div>`;
   }).join('');
   const rows = j.items.map(i => { const c = cat(i.cat); return `<tr><td>${c.label}</td><td>${esc(i.brand || '—')}</td><td>${esc(i.thickness || '—')}</td><td>${esc(i.size || i.pack || '—')}</td><td class="mono"><b>${i.qty}</b> ${c.unit}</td></tr>`; }).join('');
-  return `<div class="row between"><div><p class="tag" style="margin:0"><a href="#list" data-view="list" style="text-decoration:none">← All job cards</a></p>
+  return `<div class="row between"><div><p class="tag" style="margin:0"><a href="#list" data-view="list" style="text-decoration:none">← All orders</a></p>
       <h1 class="h1">${j.no} · ${esc(j.customer.name)}</h1><p class="sub">Received ${when(j.createdAt)} · ${esc(j.mode)} · promised ${new Date(j.due).toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'})}</p></div>
-    <div class="row">${waButton(j)}<button class="btn" data-print="${j.no}">Print job card</button><a class="btn" href="${esc(j.track)}" target="_blank" rel="noopener">See what the customer sees</a></div></div>
+    <div class="row">${waButton(j)}<button class="btn" data-print="${j.no}">Print order</button><a class="btn" href="${esc(j.track)}" target="_blank" rel="noopener">See what the customer sees</a></div></div>
   <div class="card sec" style="margin-top:16px"><div class="row between" style="margin-bottom:12px"><b>Process</b><span class="muted" style="font-size:12.5px">Each step is ticked by whoever has that duty today, in order. The customer's tracking page follows every tick.</span></div><div class="stages">${tiles}</div></div>
   <div class="detail">
     <div class="card"><div class="sec"><b>Items</b></div><div style="overflow-x:auto"><table class="items"><thead><tr><th>Category</th><th>Brand</th><th>Thickness</th><th>Size / pack</th><th>Quantity</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${j.notes ? `<div class="sec"><span class="tag">Notes</span><p style="margin:6px 0 0">${esc(j.notes)}</p></div>` : ''}
       <div class="sec"><span class="tag">What the customer is sent</span><div class="bubble">${esc(customerMessage(j))}<small>WhatsApp · order update · ${j.lang === 'hi' ? 'Hindi' : 'English'}</small></div>
-        ${waReady() ? `<p class="muted" style="font-size:12.5px;margin:10px 0 0">Goes from the shop's WhatsApp number when you press the green button. Nothing is sent by itself except the thank-you when the card is saved.</p>
+        ${waReady() ? `<p class="muted" style="font-size:12.5px;margin:10px 0 0">Goes from the shop's WhatsApp number when you press the green button. Nothing is sent by itself except the thank-you when the order is saved.</p>
         <div class="row" style="margin-top:10px"><button class="btn btn--sm" data-wasend="thanks">Send the thank-you again</button><a class="btn btn--sm btn--ghost" href="${waCustomer(j)}" target="_blank" rel="noopener">Open in my own WhatsApp instead</a></div>` : ''}</div></div>
     <div class="card">
       <div class="sec"><span class="tag">Customer</span><dl class="kv" style="margin:10px 0 0"><dt>Name</dt><dd>${esc(j.customer.name)}</dd><dt>Phone</dt><dd><a href="tel:+91${esc(j.customer.phone)}">${phoneFmt(j.customer.phone)}</a></dd>
@@ -249,20 +326,20 @@ function viewJob(){
   </div>`;
 }
 
-/* ---- new job card */
+/* ---- new order */
 function blankDraft(){ return {name:'', phone:'', site:'', contractor:'', mode:'Pickup', lang:'en', due:new Date(Date.now() + 864e5).toISOString().slice(0, 10), notes:'', amount:'', advance:'', items:[]}; }
 function viewNew(){
-  if (!myDuties().includes('received')) return `<h1 class="h1">New job card</h1><p class="sub">Job cards are created by whoever has "Order received" as their duty today${onDuty('received').length ? ` (${esc(onDuty('received').map(w => w.name).join(', '))})` : ''}, or by the owner.</p>`;
+  if (!myDuties().includes('received')) return `<h1 class="h1">New order</h1><p class="sub">Orders are created by whoever has "Order received" as their duty today${onDuty('received').length ? ` (${esc(onDuty('received').map(w => w.name).join(', '))})` : ''}, or by the owner.</p>`;
   const d = state.draft || (state.draft = blankDraft());
   const lines = d.items.map((it, i) => { const c = cat(it.cat);
-    return `<div class="line" data-line="${i}"><div class="cat">${c.label}<small>${c.fields.map(f => FIELD_LABEL[f]).join(', ')}</small></div>
+    return `<div class="line" data-line="${i}"><div class="cat">${c.label}<small>${c.fields.map(f => fieldLabel(c, f)).join(', ')}</small></div>
       ${c.fields.map(f => f === 'qty'
         ? `<label>Quantity<span class="qty"><input type="number" min="1" inputmode="numeric" data-f="qty" value="${esc(it.qty || '')}" placeholder="0"><span>${c.unit}</span></span></label>`
-        : `<label>${FIELD_LABEL[f]}<input list="dl-${c.key}-${f}" data-f="${f}" value="${esc(it[f] || '')}" placeholder="Choose or type" maxlength="60"><datalist id="dl-${c.key}-${f}">${c[f].map(b => `<option value="${esc(b)}">`).join('')}</datalist></label>`
+        : `<label>${fieldLabel(c, f)}<input list="dl-${c.key}-${f}" data-f="${f}" value="${esc(it[f] || '')}" placeholder="${(c[f] || []).length ? 'Choose or type' : 'Type it in'}" maxlength="60"><datalist id="dl-${c.key}-${f}">${(c[f] || []).map(b => `<option value="${esc(b)}">`).join('')}</datalist></label>`
       ).join('')}
       ${'<span></span>'.repeat(Math.max(0, 4 - c.fields.length))}
       <button class="x" data-remove="${i}" title="Remove this item">×</button></div>`; }).join('');
-  return `<div class="row between"><div><h1 class="h1">New job card</h1><p class="sub">Fill in the customer, add what they're buying, save — the card goes onto the floor board as "Order received".</p></div></div>
+  return `<div class="row between"><div><h1 class="h1">New order</h1><p class="sub">Fill in the customer, add what they're buying, save — the order goes onto the floor board as "Order received".</p></div></div>
   <div class="card sec" style="margin-top:16px"><div class="form">
     <label class="f">Customer name *<input id="f-name" value="${esc(d.name)}" placeholder="e.g. Rajesh Meena" autocomplete="off" maxlength="120"><span class="err" id="e-name"></span></label>
     <label class="f">Phone (WhatsApp) *<input id="f-phone" value="${esc(d.phone)}" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number"><span class="err" id="e-phone"></span></label>
@@ -275,13 +352,16 @@ function viewNew(){
   <div class="card sec" style="margin-top:14px">
     <div class="row between"><b>Items</b><span class="muted" style="font-size:12.5px">Tap a category to add a line. Brands and sizes suggest as you type; anything else can be typed in.</span></div>
     <div class="catbar" style="margin-top:12px">${CATEGORIES.map(c => `<button class="catbtn" data-add="${c.key}">+ ${c.label}</button>`).join('')}</div>
-    ${lines || '<p class="muted" style="margin:14px 0 0">No items yet.</p>'}<span class="err" id="e-items"></span>
+    ${lines || '<p class="muted" style="margin:14px 0 0">No items yet.</p>'}
+    <div class="row" style="margin-top:12px"><select class="in" id="add-cat" style="width:auto" aria-label="Kind of item">${CATEGORIES.map(c => `<option value="${c.key}" ${c.key === state.lastCat ? 'selected' : ''}>${c.label}</option>`).join('')}</select>
+      <button class="btn btn--dark btn--sm" data-additem>+ Add item</button></div>
+    <span class="err" id="e-items"></span>
   </div>
   <div class="card sec" style="margin-top:14px"><div class="form">
     <label class="f">Notes for the team<textarea id="f-notes" rows="2" maxlength="500" placeholder="e.g. customer wants delivery before 11 am">${esc(d.notes)}</textarea></label>
     ${isOwner() ? `<div class="form" style="grid-template-columns:1fr 1fr"><label class="f">Order value (₹)<input id="f-amount" inputmode="numeric" value="${esc(d.amount)}" placeholder="optional"></label><label class="f">Advance received (₹)<input id="f-advance" inputmode="numeric" value="${esc(d.advance)}" placeholder="optional"></label></div>` : '<p class="muted" style="margin:0">Order value and advance are entered by the owner.</p>'}
   </div></div>
-  <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" data-clear>Clear</button><button class="btn btn--gold" data-create>Save job card</button></div>`;
+  <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" data-clear>Clear</button><button class="btn btn--gold" data-create>Save order</button></div>`;
 }
 function readDraft(){
   const d = state.draft; if (!d || state.view !== 'new') return;
@@ -294,7 +374,8 @@ async function createJob(btn){
   set('#e-name', d.name.trim() ? '' : 'Enter the customer\'s name.');
   set('#e-phone', /^[6-9]\d{9}$/.test(d.phone.trim()) ? '' : 'Enter a 10-digit mobile number.');
   set('#e-due', d.due ? '' : 'Choose the promised date.');
-  set('#e-items', !d.items.length ? 'Add at least one item.' : d.items.some(i => !(+i.qty > 0)) ? 'Every item needs a quantity.' : '');
+  set('#e-items', !d.items.length ? 'Add at least one item.' : d.items.some(i => !(+i.qty > 0)) ? 'Every item needs a quantity.'
+    : d.items.some(i => i.cat === 'other' && !(i.brand || '').trim()) ? 'Give every "Other" item a name.' : '');
   if (bad) return toast('Check the highlighted fields.', true);
   const body = {customer_name:d.name.trim(), customer_phone:d.phone.trim(), site:d.site.trim(), contractor:d.contractor.trim(), mode:d.mode, lang:d.lang, due:d.due, notes:d.notes.trim(),
     items:d.items.map(i => { const o = {category:i.cat}; cat(i.cat).fields.forEach(f => o[f] = f === 'qty' ? Math.round(+i.qty) : (i[f] || '').trim()); return o; })};
@@ -319,7 +400,7 @@ function viewTeam(){
         ${s ? `<span class="pill ok">Sent ${when(s.at).replace('Today, ', '')}</span>` : '<span class="pill warn">Not sent yet</span>'}</div>
       <span class="tag" style="margin-top:12px">Duty today</span>
       <div class="duties">${STAGES.map(st => `<button class="duty ${d.includes(st.key) ? 'on' : ''}" data-duty="${w.id}:${st.key}" ${isOwner() ? '' : 'disabled'}>${esc(st.label)}</button>`).join('')}</div>
-      <span class="tag" style="margin-top:14px">Job cards waiting for ${esc(w.name)} (${work.length})</span>
+      <span class="tag" style="margin-top:14px">Orders waiting for ${esc(w.name)} (${work.length})</span>
       <ul class="worklist">${work.map(j => `<li><span><a href="#job/${j.no}" data-open="${j.no}"><b>${j.no}</b></a> ${esc(j.customer.name)} — ${esc(nextStage(j).label)}</span><span class="muted">${esc(j.mode)}</span></li>`).join('') || '<li class="muted">Nothing waiting right now.</li>'}</ul>
       ${isOwner() || w.id === ME.id ? `<span class="tag" style="margin-top:14px">Message ${esc(w.name)} gets</span>
       <div class="bubble">${esc(workMessage(w))}<small>WhatsApp · daily work</small></div>` : ''}
@@ -327,7 +408,7 @@ function viewTeam(){
     </div>`; }).join('');
   return `<div class="row between"><div><h1 class="h1">Today's team</h1><p class="sub">${dayLabel(new Date())} · ${DB.workers.length} worker${DB.workers.length === 1 ? '' : 's'}. ${isOwner() ? 'Tap a duty to give it or take it away; each worker ticks only the steps of their duty. Tomorrow starts with today\'s duties.' : 'Your duty for today is set by the owner.'}</p></div>
     ${isOwner() ? '<button class="btn" data-view="staff">Staff &amp; logins</button>' : ''}</div>
-  ${DB.workers.length && uncovered.length ? `<p class="note" style="margin:14px 0 0;background:var(--warn-bg);border-color:#f3d7a6;color:#7a4a00"><b>Nobody is on ${uncovered.map(s => s.label).join(', ')} today.</b> Cards waiting for ${uncovered.length === 1 ? 'that step' : 'those steps'} can only be ticked by the owner.</p>` : ''}
+  ${DB.workers.length && uncovered.length ? `<p class="note" style="margin:14px 0 0;background:var(--warn-bg);border-color:#f3d7a6;color:#7a4a00"><b>Nobody is on ${uncovered.map(s => s.label).join(', ')} today.</b> Orders waiting for ${uncovered.length === 1 ? 'that step' : 'those steps'} can only be ticked by the owner.</p>` : ''}
   ${isOwner() ? '<p class="note" style="margin:14px 0 0">"Send" opens WhatsApp with the message ready, one worker at a time. Messages that go out by themselves every morning need WoodStar\'s own WhatsApp Business number connected.</p>' : ''}
   ${DB.workers.length ? `<div class="team">${cards}</div>` : `<div class="card sec" style="margin-top:16px"><b>No workers yet.</b><p class="sub">${isOwner() ? 'Add each worker under Staff &amp; logins; they then appear here to be given a duty.' : ''}</p></div>`}`;
 }
@@ -344,8 +425,8 @@ function checkWording(key, text){
   if (text.trim().length > 700) return 'Too long — at most 700 characters.';
   return '';
 }
-const tplSample = () => ({name:'Ramesh', date:new Date().toLocaleDateString('en-IN', {day:'numeric', month:'long'}), duty:'Order material from suppliers', jobs:'WS-1045 Priya Agarwal; WS-1046 Suresh Kumawat', shop:SHOP.name,
-  job:'WS-1043', status:'Material received', link:location.origin + '/t/…'});
+const tplSample = () => ({name:'Ramesh', date:new Date().toLocaleDateString('en-IN', {day:'numeric', month:'long'}), duty:'Order material from suppliers', orders:'WS-1045 Priya Agarwal; WS-1046 Suresh Kumawat', shop:SHOP.name,
+  order:'WS-1043', status:'Material received', link:location.origin + '/t/…'});
 const SENT_BY_NUMBER = ['thanks', 'update'];             // these go from the shop's number, so WhatsApp must approve them
 const APPROVAL = {not_submitted:['warn', 'Not sent for approval'], pending:['info', "Waiting for WhatsApp's approval"], approved:['ok', 'Approved by WhatsApp'],
   rejected:['bad', 'Rejected by WhatsApp'], failed:['bad', 'Could not be submitted']};
@@ -376,11 +457,11 @@ function viewMessages(){
         <p class="muted" style="font-size:12.5px;margin:10px 0 0">${a ? 'Sent from the shop\'s WhatsApp number. A changed wording has to be approved by WhatsApp again before it is used.' : "This wording fills the message when you press a worker's WhatsApp button in Today's team; it opens in your own WhatsApp."}</p></div></div></div>`; };
   const top = !wa.ready
     ? `<p class="note" style="margin:14px 0 0">Sending from the shop's own WhatsApp number is not switched on yet. Until it is, the WhatsApp buttons open WhatsApp on your own phone with the message written, and no thank-you goes by itself.</p>`
-    : `<div class="card sec" style="margin-top:14px"><div class="row between"><div><b>The shop's WhatsApp number is connected</b><div class="muted">The thank-you goes by itself when a job card is saved. An order update goes only when someone presses the WhatsApp button on a job card.</div></div>
+    : `<div class="card sec" style="margin-top:14px"><div class="row between"><div><b>The shop's WhatsApp number is connected</b><div class="muted">The thank-you goes by itself when an order is saved. An order update goes only when someone presses the WhatsApp button on an order.</div></div>
         <button class="btn btn--sm" data-warefresh>Check approvals now</button></div>
       <div class="row between" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><div><b>Customers asking where their order is</b>
-        <div class="muted">${wa.replies_on ? 'Anyone who messages the number is sent the step their order has reached, found by their phone number.' : 'Switch this on and anyone who messages the number is sent the step their order has reached, found by their phone number.'}</div></div>
-        ${wa.replies_on ? '<span class="pill ok">On</span>' : `<button class="btn btn--dark btn--sm" data-wareplies ${wa.can_reply ? '' : 'disabled title="Needs WHATSAPP_WEBHOOK_SECRET in the service settings"'}>Switch on</button>`}</div></div>`;
+        <div class="muted">${wa.via_assistant ? "The assistant on the shop's number does this: a customer who says hi or asks about their order is sent the step it has reached, found by their phone number. Everyone else is answered as usual." : wa.replies_on ? 'Anyone who messages the number is sent the step their order has reached, found by their phone number.' : 'Switch this on and anyone who messages the number is sent the step their order has reached, found by their phone number.'}</div></div>
+        ${wa.via_assistant || wa.replies_on ? '<span class="pill ok">On</span>' : `<button class="btn btn--dark btn--sm" data-wareplies ${wa.can_reply ? '' : 'disabled title="Needs WHATSAPP_WEBHOOK_SECRET in the service settings"'}>Switch on</button>`}</div></div>`;
   return `<h1 class="h1">WhatsApp messages</h1><p class="sub">The messages the dashboard writes. Words in {curly brackets} are filled in for each person.</p>
   ${top}
   ${block('thanks')}${block('update')}${block('work')}`;
@@ -438,18 +519,21 @@ function render(){
   nav();
   if (!loaded) return;
   const v = state.view;
-  $('#app').innerHTML = v === 'board' ? viewBoard() : v === 'list' ? viewList() : v === 'job' ? viewJob() : v === 'new' ? viewNew() : v === 'team' ? viewTeam() : v === 'messages' ? viewMessages() : viewStaff();
+  $('#app').innerHTML = v === 'board' ? viewBoard() : v === 'list' ? viewList() : v === 'job' ? viewJob() : v === 'new' ? viewNew() : v === 'team' ? viewTeam() : v === 'chats' ? viewChats() : v === 'messages' ? viewMessages() : viewStaff();
+  const m = $('#msgs'); if (m) m.scrollTop = m.scrollHeight;               // a chat opens at its newest message
 }
 function fromHash(){
   const [v, j] = location.hash.replace('#', '').split('/');
-  state.view = ['board', 'list', 'job', 'new', 'team', 'messages', 'staff'].includes(v) ? v : 'board';
+  state.view = ['board', 'list', 'job', 'new', 'team', 'chats', 'messages', 'staff'].includes(v) ? v : 'board';
   state.job = j || null;
   if (state.view === 'job' && state.job) loadJob(state.job);
   if (state.view === 'staff') loadStaff();
+  if (state.view === 'chats') openChats(state.job);
   render();
 }
 $('#q').addEventListener('input', e => { state.q = e.target.value; if (!['board', 'list'].includes(state.view)) state.view = 'list'; render(); });
 document.addEventListener('input', e => {
+  if (e.target.id === 'chat-reply') { chat.draft = e.target.value; return; }
   const key = e.target.dataset.tpl; if (!key) return;                       // live preview while the wording is typed
   const lang = state.tplLang[key], saved = wording(key, lang); state.tplDraft[key + lang] = e.target.value;
   $(`[data-tplerr="${key}"]`).textContent = checkWording(key, e.target.value);
@@ -463,13 +547,15 @@ document.addEventListener('change', e => {
   patchStaff(+id, {[field]:value});
 });
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-view],[data-open],[data-tick],[data-add],[data-remove],[data-create],[data-clear],[data-print],[data-all],[data-pay],[data-duty],[data-sentone],[data-tpllang],[data-blank],[data-tplsave],[data-tplreset],[data-wasend],[data-wasubmit],[data-warefresh],[data-wareplies],[data-staffadd],[data-staffpass],[data-staffactive]');
+  const t = e.target.closest('[data-view],[data-open],[data-tick],[data-add],[data-additem],[data-chat],[data-chatback],[data-chatsend],[data-chatorder],[data-remove],[data-create],[data-clear],[data-print],[data-all],[data-pay],[data-duty],[data-sentone],[data-tpllang],[data-blank],[data-tplsave],[data-tplreset],[data-wasend],[data-wasubmit],[data-warefresh],[data-wareplies],[data-staffadd],[data-staffpass],[data-staffactive]');
   if (!t) return;
   const d = t.dataset;
   if (d.view) { e.preventDefault(); readDraft(); return go(d.view); }
   if (d.open) { e.preventDefault(); return go('job', d.open); }
   if (d.tick) return toggle(currentJob(), d.tick);
-  if (d.add) { readDraft(); const c = cat(d.add), it = {cat:c.key}; c.fields.forEach(f => it[f] = ''); state.draft.items.push(it); render();
+  if (d.add || 'additem' in d) {                                            // a category button, or "+ Add item" with the kind picked beside it
+    const c = cat(d.add || $('#add-cat').value), it = {cat:c.key}; readDraft();
+    c.fields.forEach(f => it[f] = ''); state.draft.items.push(it); state.lastCat = c.key; render();
     const rows = document.querySelectorAll('[data-line]'); rows[rows.length - 1].querySelector('input').focus(); return; }
   if (d.remove) { readDraft(); state.draft.items.splice(+d.remove, 1); return render(); }
   if ('create' in d) return createJob(t);
@@ -490,6 +576,19 @@ document.addEventListener('click', async e => {
   }
   if (d.sentone) {                                                          // the link itself opens WhatsApp
     try { takeTeam(await api('POST', 'roster/sent/', {user_ids:[+d.sentone]})); } catch (err) { toast(err.message, true); }
+    return render();
+  }
+  if (d.chat) { e.preventDefault(); return go('chats', d.chat); }
+  if ('chatback' in d) return go('chats');
+  if ('chatorder' in d) {                                                   // an order for the person in this chat
+    const t = chat.thread; state.draft = blankDraft(); state.draft.name = t.name || ''; state.draft.phone = t.phone.slice(-10);
+    return go('new');
+  }
+  if ('chatsend' in d) {
+    const body = chat.draft.trim(), id = state.job; if (!body) return;
+    t.disabled = true;
+    try { const sent = await api('POST', `chats/${id}/reply/`, {body}); if (chat.thread && chat.thread.id === id) chat.thread.messages.push(sent); chat.draft = ''; loadChats(true); }
+    catch (err) { toast(err.message, true); }
     return render();
   }
   if (d.wasend) {                                                           // from the shop's number, now
@@ -542,10 +641,21 @@ document.addEventListener('click', async e => {
     return patchStaff(u.id, {is_active:!u.is_active}, u.is_active ? `${u.name} can no longer sign in.` : `${u.name} can sign in again.`);
   }
 });
+// Ctrl+Enter sends a chat reply; plain Enter keeps writing
+document.addEventListener('keydown', e => { if (e.target.id === 'chat-reply' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('[data-chatsend]').click(); } });
 addEventListener('hashchange', () => { const want = location.hash.replace('#', ''); if (want !== `${state.view}${state.job ? '/' + state.job : ''}`) fromHash(); });
 // stay in step with the other phones and the counter computer
 setInterval(() => { if (document.visibilityState === 'visible') refresh(true); }, REFRESH_MS);
+// chats move faster than orders: while that screen is open, look every few seconds; otherwise just keep the count fresh
+setInterval(() => {
+  if (document.visibilityState !== 'visible' || !chatsOn()) return;
+  if (state.view === 'chats') { loadChats(true); if (state.job) loadChat(state.job, true); }
+}, 8000);
+setInterval(() => { if (document.visibilityState === 'visible' && state.view !== 'chats') loadChats(true); }, 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(true); });
 
 fromHash();
-refresh().then(() => { if (state.view === 'job' && state.job) loadJob(state.job); });
+refresh().then(() => {
+  if (state.view === 'job' && state.job) loadJob(state.job);
+  if (state.view === 'chats') openChats(state.job); else loadChats(true);
+});

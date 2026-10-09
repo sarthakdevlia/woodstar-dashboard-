@@ -1,6 +1,6 @@
-# WoodStar Ply Lam — job card dashboard
+# WoodStar Ply Lam — order dashboard
 
-Every order is a job card that moves through five steps:
+Every order is an order that moves through five steps:
 **Order received → Material ordered → Material received → Dispatch → Delivered.**
 Each day the owner gives every worker a duty; each worker ticks only the steps of their duty; the
 customer follows the card from a link.
@@ -13,7 +13,7 @@ Django app with staff logins. Built on the same pattern as the Delta Designs wor
 |---|---|
 | `config/` | Settings and URLs. |
 | `staff/` | Accounts (owner / worker), the first-owner bootstrap, sample data for local use. |
-| `jobs/` | Job cards, steps, daily duties, message wording, audit trail, the API and the customer tracking page. |
+| `jobs/` | Orders, steps, daily duties, message wording, audit trail, the API and the customer tracking page. |
 | `jobs/stages.py`, `jobs/catalog.py` | **The lists to edit**: the five steps, the product categories and their brands/sizes, the shop's details, the standard message wording. |
 | `templates/`, `static/` | Sign-in page, the dashboard page and its script, the customer tracking page. |
 | `demo/index.html` | The original clickable demo (browser-only). Not served. |
@@ -23,10 +23,10 @@ Django app with staff logins. Built on the same pattern as the Delta Designs wor
 - Two kinds of account: **owner** and **worker**. The owner picks each worker's duty for the day in
   *Today's team*; a new day starts with the previous day's duties.
 - A worker ticks only the steps of today's duty, only in order, and can never undo.
-- Job cards are created by the owner or by whoever is on *Order received* that day.
+- Orders are created by the owner or by whoever is on *Order received* that day.
 - Only the owner undoes a step (latest first), sets duties, manages accounts, changes message wording,
   and sees or edits order value and payments. Money is never sent to a worker's browser.
-- Every change to a job card is written to its audit trail.
+- Every change to an order is written to its audit trail.
 - Five failed sign-ins lock that username out for 15 minutes.
 - The customer's link (`/t/<token>/`) needs no login, shows only that order, and is not guessable.
 
@@ -35,15 +35,15 @@ Django app with staff logins. Built on the same pattern as the Delta Designs wor
 With the shop's own number connected (see the environment variables below), three things go from
 that number through SD Ventures' Gupshup partner account — and nothing else, ever:
 
-- **A thank-you**, by itself, the moment a job card is saved.
-- **An order update**, only when someone presses the WhatsApp button on a job card.
+- **A thank-you**, by itself, the moment an order is saved.
+- **An order update**, only when someone presses the WhatsApp button on an order.
 - **A reply** to any customer who messages the number: the step their order has reached, found by
   their phone number. The owner switches this on once, under *WhatsApp messages*.
 
 The first two reach people who have not written first, so WhatsApp has to approve each wording, per
 language, as a template. The owner submits them under *WhatsApp messages*, which shows where each
 approval stands; a changed wording is a new template, and the approved one keeps going out until the
-new one is approved. Every send, and every failure, is written to the job card's audit trail.
+new one is approved. Every send, and every failure, is written to the order's audit trail.
 
 Without the number connected, the buttons open WhatsApp on the user's own phone with the message
 written, and no thank-you is sent. The worker's daily message always works that way.
@@ -51,12 +51,27 @@ written, and no thank-you is sent. The worker's daily message always works that 
 Each message is charged by WhatsApp and Gupshup. Replies to people who write in are spaced out (one a
 minute per phone; "no order found" at most twice a day) so a chatty number cannot run up a bill.
 
-**Only connect a number that this shop alone uses.** Once replies are on, every message sent to that
-number is answered from here.
+**Who answers the number.** WoodStar's number is answered by the SD Ventures assistant (the AI-SaaS
+platform), so the dashboard must not answer it as well. Instead the assistant asks the dashboard:
+with `ORDER_STATUS_SECRET` set, `POST /hooks/order-status/` returns the words to send for a phone
+number, and the *Switch on* button is replaced by "On". The dashboard's own incoming-message handler
+(`/webhooks/whatsapp/`, switched on from *WhatsApp messages*) is only for a number nothing else answers.
 
 Not verified against a live number at the time of writing: the calls follow the clinic platform's
 client, parts of which are themselves marked unconfirmed there. The first real submission and send
 are the test.
+
+## Customer chats
+
+The shop's WhatsApp conversations live on the SD Ventures platform, which answers the number. The
+dashboard shows them under *Customer chats* and sends a person's reply, without keeping a second copy:
+`jobs/chats.py` calls the platform's own API (`/api/v1/conversations/`) signed in as one of the shop's
+users there (`PLATFORM_EMAIL` / `PLATFORM_PASSWORD`). A reply is recorded on the platform like any staff
+reply and quietens the assistant on that chat for a while. Each chat shows that customer's orders, found
+by phone number, and can start a new order for them.
+
+Open to the owner and to whoever has *Order received* as their duty that day. WhatsApp allows a free
+reply only within 24 hours of the customer's last message; after that the reply box is replaced by a note.
 
 ## Run locally
 
@@ -68,9 +83,9 @@ $env:DJANGO_DEBUG="1"; .venv\Scripts\python manage.py test
 $env:DJANGO_DEBUG="1"; .venv\Scripts\python manage.py runserver
 ```
 
-Locally it uses SQLite. For sample people and job cards, set `DEMO_PASSWORD` (8+ characters) and run
+Locally it uses SQLite. For sample people and orders, set `DEMO_PASSWORD` (8+ characters) and run
 `manage.py seed_demo`; every sample account gets that password. It refuses to run on a database that
-already has job cards.
+already has orders.
 
 ## Deploy (Render web service)
 
@@ -96,10 +111,13 @@ workspace of WoodStar's own.
    | `DATABASE_URL` | the instance's **Internal** Database URL with its last part changed to `/woodstar` |
    | `OWNER_USERNAME` / `OWNER_NAME` / `OWNER_PASSWORD` | the owner's first login |
    | `PYTHON_VERSION` | `3.12.10` |
-   | `FIRST_JOB_NUMBER` | optional; the first job card's number (default `1001`) |
+   | `FIRST_JOB_NUMBER` | optional; the first order's number (default `1001`) |
    | `WHATSAPP_PARTNER_EMAIL` / `WHATSAPP_PARTNER_SECRET` | the Gupshup partner login, same values as on `sdventures-api` |
    | `WHATSAPP_APP_ID` | the Gupshup app ID of WoodStar's WhatsApp number |
-   | `WHATSAPP_WEBHOOK_SECRET` | a long random string (Generate); lets the app trust incoming messages |
+   | `PLATFORM_EMAIL` / `PLATFORM_PASSWORD` | a login of the shop's own on the SD Ventures platform; switches on *Customer chats* |
+   | `PLATFORM_URL` | optional; the platform's address (default `https://www.sdventure.in`) |
+   | `ORDER_STATUS_SECRET` | a long random string (Generate); the same value goes on `sdventures-api` |
+   | `WHATSAPP_WEBHOOK_SECRET` | only if the dashboard itself answers the number; not needed with the assistant |
 
    Once the owner has signed in, **delete `OWNER_PASSWORD`** — the account already exists and the
    command never overwrites it.

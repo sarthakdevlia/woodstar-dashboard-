@@ -77,10 +77,10 @@ class WhatsAppTestCase(ApiTestCase):
 
 class WordingToTemplateTests(WhatsAppTestCase):
     def test_blanks_are_numbered_in_order_and_the_link_keeps_a_fixed_address(self):
-        content, params = whatsapp.to_numbered("Namaste {name}, order {job} is now {status}.  Track: {link} Thank you {name}.")
+        content, params = whatsapp.to_numbered("Namaste {name}, order {order} is now {status}.  Track: {link} Thank you {name}.")
         self.assertEqual(content, "Namaste {{1}}, order {{2}} is now {{3}}. Track: https://dashboard.example.in/t/{{4}}/ Thank you {{1}}.")
-        self.assertEqual(params, "name,job,status,link")
-        filled = whatsapp.fill(content, params, {"name": "Asha", "job": "WS-1", "status": "Dispatch", "link": "tok"})
+        self.assertEqual(params, "name,order,status,link")
+        filled = whatsapp.fill(content, params, {"name": "Asha", "order": "WS-1", "status": "Dispatch", "link": "tok"})
         self.assertEqual(filled, "Namaste Asha, order WS-1 is now Dispatch. Track: https://dashboard.example.in/t/tok/ Thank you Asha.")
 
 
@@ -116,7 +116,7 @@ class ApprovalTests(WhatsAppTestCase):
 
     def test_changed_wording_is_a_new_version_and_the_approved_one_stays_in_use(self):
         self.approve("update")
-        new = "Namaste {name}, order {job} has reached: {status}. Follow it here: {link} Thank you."
+        new = "Namaste {name}, order {order} has reached: {status}. Follow it here: {link} Thank you."
         self.client_for(self.owner).put("/api/v1/templates/update/en/", {"body": new}, format="json")
         self.assertTrue(whatsapp.status_view()["messages"]["update"]["en"]["edited"])
         row = whatsapp.submit(self.owner, "update", "en")
@@ -273,3 +273,68 @@ class CustomerWritesInTests(WhatsAppTestCase):
                                HTTP_X_GUPSHUP_WEBHOOK_SECRET=SECRET)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(self.gupshup.sent, [])
+
+
+@override_settings(ORDER_STATUS_SECRET="shared-secret")
+class AssistantAsksTests(WhatsAppTestCase):
+    """The assistant that answers the shop's number asks this dashboard for an order's status."""
+
+    def ask(self, phone, secret="shared-secret"):
+        headers = {"HTTP_X_ORDER_STATUS_SECRET": secret} if secret else {}
+        return self.client.post("/hooks/order-status/", json.dumps({"phone": phone}), content_type="application/json", **headers)
+
+    def test_it_is_given_the_words_to_send(self):
+        job = self.new_job()
+        self.tick(self.ramesh, job["number"], "ordered")
+        res = self.ask("919829012345")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["found"])
+        self.assertIn(f"*WS-{job['number']}* — Material ordered ✓", res.json()["text"])
+        self.assertIn(job["track"], res.json()["text"])
+        self.assertNotIn("118", res.json()["text"])
+        self.assertEqual(self.gupshup.sent, [])                 # the assistant sends it; the dashboard sends nothing
+
+    def test_a_number_with_no_order_is_left_to_the_assistant(self):
+        self.assertEqual(self.ask("919000000001").json(), {"found": False})
+
+    def test_only_a_caller_with_the_secret_is_answered(self):
+        self.new_job()
+        self.assertEqual(self.ask("919829012345", secret=None).status_code, 403)
+        self.assertEqual(self.ask("919829012345", secret="guess").status_code, 403)
+        self.assertEqual(self.client.get("/hooks/order-status/").status_code, 405)
+        self.assertEqual(self.ask("12").status_code, 400)
+        with override_settings(ORDER_STATUS_SECRET=""):
+            self.assertEqual(self.ask("919829012345", secret="").status_code, 403)
+
+    def test_the_dashboard_does_not_also_answer_the_number_itself(self):
+        res = self.client_for(self.owner).post("/api/v1/whatsapp/replies/")
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("already answered by the assistant", res.json()["message"])
+        self.assertEqual(self.gupshup.subscriptions, [])
+        self.assertTrue(self.client_for(self.owner).get("/api/v1/state/").json()["data"]["whatsapp"]["via_assistant"])
+
+
+class RenamedBlanksTests(WhatsAppTestCase):
+    """{job} became {order}: wording saved, and templates submitted, before the change still work."""
+
+    def test_saved_wording_and_submitted_templates_follow_the_rename(self):
+        import importlib
+
+        from django.apps import apps
+
+        from jobs.models import MessageWording
+
+        MessageWording.objects.create(key="update", lang="en", body="Namaste {name}, order {job} is now {status}. See {link} soon.")
+        MessageWording.objects.create(key="work", lang="en", body="Namaste {name}: {duty}. Waiting: {jobs}. Thank you.")
+        row = WhatsAppTemplate.objects.create(key="update", lang="en", version=1, element_name="woodstar_update_en_v1",
+                                              content="Namaste {{1}}, order {{2}} is now {{3}}.", params="name,job,status",
+                                              status=WhatsAppTemplate.APPROVED)
+        importlib.import_module("jobs.migrations.0005_order_blanks").forwards(apps, None)
+        self.assertEqual(MessageWording.objects.get(key="update").body, "Namaste {name}, order {order} is now {status}. See {link} soon.")
+        self.assertEqual(MessageWording.objects.get(key="work").body, "Namaste {name}: {duty}. Waiting: {orders}. Thank you.")
+        row.refresh_from_db()
+        self.assertEqual(row.params, "name,order,status")
+        # and the approved template still sends, its numbers filled from the renamed blanks
+        number = self.new_job()["number"]
+        self.assertEqual(self.press(self.owner, number).status_code, 200)
+        self.assertEqual(self.gupshup.sent[-1]["params"], ["Rajesh Meena", f"WS-{number}", "Order received"])
