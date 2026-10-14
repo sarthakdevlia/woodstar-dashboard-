@@ -94,10 +94,11 @@ def fill(content, params, values):
 
 
 def example(content, params, lang):
-    """The sample message WhatsApp's reviewer reads. Gupshup finds each blank's sample by its
-    square brackets ("Hi [Ramesh]"); without them it passes Meta no examples, and Meta rejects
-    the template with "component of type BODY is missing expected field(s) (example)"."""
-    return fill(content, params, {name: f"[{value}]" for name, value in SAMPLE[lang].items()})
+    """The sample message WhatsApp's reviewer reads: the wording with each blank filled in, as
+    plain text. This is the form the clinic platform's reminder templates were approved with
+    (Oct 2026). Gupshup works out each blank's sample by lining the two up, which is why a
+    wording may use a blank only once (services.check_wording)."""
+    return fill(content, params, SAMPLE[lang])
 
 
 def _param(value):

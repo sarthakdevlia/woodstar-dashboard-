@@ -91,8 +91,8 @@ class ApprovalTests(WhatsAppTestCase):
         sent = self.gupshup.submitted[0]
         self.assertEqual(sent["name"], "woodstar_update_en_v1")
         self.assertIn("at {{3}} is now: {{4}}. Track it any time: https://dashboard.example.in/t/{{5}}/ Thank you.", sent["content"])
-        self.assertIn("Namaste [Ramesh Gupta], your order [WS-1043] at [WoodStar Ply Lam] is now: [Material received].", sent["example"])
-        self.assertIn("https://dashboard.example.in/t/[Ab3dE6gH9jK2mN5p]/", sent["example"])
+        self.assertIn("Namaste Ramesh Gupta, your order WS-1043 at WoodStar Ply Lam is now: Material received.", sent["example"])
+        self.assertIn("https://dashboard.example.in/t/Ab3dE6gH9jK2mN5p/", sent["example"])
         state = res.json()["data"]["whatsapp"]["messages"]["update"]
         self.assertEqual((state["en"]["status"], state["hi"]["status"]), ("pending", "not_submitted"))
 
@@ -350,7 +350,7 @@ class RejectedTemplateTests(WhatsAppTestCase):
         res = self.client_for(self.owner).post("/api/v1/whatsapp/templates/thanks/en/submit/")
         self.assertEqual(res.status_code, 200, res.content)
         self.assertEqual(self.gupshup.submitted[-1]["name"], "woodstar_thanks_en_v2")
-        self.assertIn("[Ramesh Gupta]", self.gupshup.submitted[-1]["example"])
+        self.assertIn("Namaste Ramesh Gupta,", self.gupshup.submitted[-1]["example"])
 
     def test_an_approved_wording_is_not_sent_twice(self):
         self.approve("thanks")
