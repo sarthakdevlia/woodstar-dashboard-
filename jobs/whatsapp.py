@@ -93,6 +93,13 @@ def fill(content, params, values):
     return content
 
 
+def example(content, params, lang):
+    """The sample message WhatsApp's reviewer reads. Gupshup finds each blank's sample by its
+    square brackets ("Hi [Ramesh]"); without them it passes Meta no examples, and Meta rejects
+    the template with "component of type BODY is missing expected field(s) (example)"."""
+    return fill(content, params, {name: f"[{value}]" for name, value in SAMPLE[lang].items()})
+
+
 def _param(value):
     """WhatsApp rejects a blank's value with a line break, a tab or a run of spaces."""
     return " ".join(str(value).split())
@@ -127,7 +134,8 @@ def submit(actor, key, lang):
     current = _latest().get((key, lang))
     if current is not None and current.status == WhatsAppTemplate.PENDING:
         raise Denied("The last wording is still waiting for WhatsApp's approval. Change it once that is decided.")
-    if current is not None and current.content == content and current.status != WhatsAppTemplate.FAILED:
+    # A rejected wording may go again unchanged: the rejection can be ours (an example WhatsApp could not read).
+    if current is not None and current.content == content and current.status == WhatsAppTemplate.APPROVED:
         raise Denied("That wording has already been submitted.")
     if current is not None and current.status == WhatsAppTemplate.FAILED:
         # The provider never took that one, so its name is still free: try again under it.
@@ -140,7 +148,7 @@ def submit(actor, key, lang):
     row.checked_at = timezone.now()
     try:
         row.provider_id, _ = client().create_template(
-            settings.WHATSAPP_APP_ID, row.element_name, lang, content, fill(content, params, SAMPLE[lang]),
+            settings.WHATSAPP_APP_ID, row.element_name, lang, content, example(content, params, lang),
             vertical=TEMPLATE_DEFAULTS[key]["title"])
     except WhatsAppSendError as exc:
         log.warning("Template %s could not be submitted: %s", row.element_name, exc)

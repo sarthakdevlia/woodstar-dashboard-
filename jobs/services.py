@@ -224,6 +224,9 @@ def check_wording(key, text):
     missing = [b for b in template["required"] if b not in used]
     if missing:
         return f"It must include {{{missing[0]}}}."
+    repeated = [b for b in template["blanks"] if used.count(b) > 1]
+    if repeated:
+        return f"Use {{{repeated[0]}}} only once — WhatsApp needs each blank to appear just once."
     stripped = text.strip()
     if stripped.startswith("{") or stripped.endswith("}"):
         return "It cannot begin or end with a blank — WhatsApp refuses that."

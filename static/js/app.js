@@ -420,6 +420,8 @@ function checkWording(key, text){
   if (unknown.length) return `{${unknown[0]}} is not one of the blanks.`;
   const missing = T.required.filter(b => !used.includes(b));
   if (missing.length) return `It must include {${missing[0]}}.`;
+  const repeated = T.blanks.filter(b => used.filter(u => u === b).length > 1);
+  if (repeated.length) return `Use {${repeated[0]}} only once — WhatsApp needs each blank to appear just once.`;
   if (/^\s*\{/.test(text) || /\}\s*$/.test(text)) return 'It cannot begin or end with a blank — WhatsApp refuses that.';
   if (text.trim().length < 30) return 'Too short — at least 30 characters.';
   if (text.trim().length > 700) return 'Too long — at most 700 characters.';
@@ -435,7 +437,7 @@ function viewMessages(){
   const wa = DB.whatsapp || {messages:{}};
   const block = key => { const T = TEMPLATE_DEFAULTS[key], lang = state.tplLang[key], saved = wording(key, lang), text = state.tplDraft[key + lang] ?? saved, problem = checkWording(key, text);
     const a = SENT_BY_NUMBER.includes(key) && wa.messages[key] ? wa.messages[key][lang] : null;
-    const canSubmit = a && wa.ready && text === saved && !problem && a.status !== 'pending' && (a.status === 'not_submitted' || a.status === 'failed' || a.edited);
+    const canSubmit = a && wa.ready && text === saved && !problem && a.status !== 'pending' && (a.status === 'not_submitted' || a.status === 'failed' || a.status === 'rejected' || a.edited);
     const approval = !a ? '' : `<div class="row" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
         <span class="pill ${APPROVAL[a.status][0]}">${APPROVAL[a.status][1]}</span>
         ${a.edited && a.status !== 'not_submitted' ? '<span class="pill warn">Wording changed since — submit it again</span>' : ''}

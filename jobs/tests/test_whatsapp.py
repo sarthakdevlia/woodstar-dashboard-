@@ -91,7 +91,8 @@ class ApprovalTests(WhatsAppTestCase):
         sent = self.gupshup.submitted[0]
         self.assertEqual(sent["name"], "woodstar_update_en_v1")
         self.assertIn("at {{3}} is now: {{4}}. Track it any time: https://dashboard.example.in/t/{{5}}/ Thank you.", sent["content"])
-        self.assertIn("Ramesh Gupta, your order WS-1043", sent["example"])
+        self.assertIn("Namaste [Ramesh Gupta], your order [WS-1043] at [WoodStar Ply Lam] is now: [Material received].", sent["example"])
+        self.assertIn("https://dashboard.example.in/t/[Ab3dE6gH9jK2mN5p]/", sent["example"])
         state = res.json()["data"]["whatsapp"]["messages"]["update"]
         self.assertEqual((state["en"]["status"], state["hi"]["status"]), ("pending", "not_submitted"))
 
@@ -338,3 +339,25 @@ class RenamedBlanksTests(WhatsAppTestCase):
         number = self.new_job()["number"]
         self.assertEqual(self.press(self.owner, number).status_code, 200)
         self.assertEqual(self.gupshup.sent[-1]["params"], ["Rajesh Meena", f"WS-{number}", "Order received"])
+
+
+class RejectedTemplateTests(WhatsAppTestCase):
+    def test_a_rejected_wording_can_go_again_as_a_new_version(self):
+        whatsapp.submit(self.owner, "thanks", "en")
+        self.gupshup.listed = [{"elementName": "woodstar_thanks_en_v1", "status": "REJECTED",
+                                "reason": "component of type BODY is missing expected field(s) (example)"}]
+        whatsapp.refresh()
+        res = self.client_for(self.owner).post("/api/v1/whatsapp/templates/thanks/en/submit/")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.gupshup.submitted[-1]["name"], "woodstar_thanks_en_v2")
+        self.assertIn("[Ramesh Gupta]", self.gupshup.submitted[-1]["example"])
+
+    def test_an_approved_wording_is_not_sent_twice(self):
+        self.approve("thanks")
+        self.assertIn("already been submitted", self.client_for(self.owner).post("/api/v1/whatsapp/templates/thanks/en/submit/").json()["message"])
+
+    def test_the_same_blank_twice_is_refused(self):
+        text = "Thank you {name}. Order number {order} at {shop}. Regards, {shop}."
+        res = self.client_for(self.owner).put("/api/v1/templates/thanks/en/", {"body": text}, format="json")
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("Use {shop} only once", res.json()["message"])
