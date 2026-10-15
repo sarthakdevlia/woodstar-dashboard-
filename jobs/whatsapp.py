@@ -273,8 +273,10 @@ def connect_incoming(actor):
     callback = f"{settings.PUBLIC_URL}/webhooks/whatsapp/"
     try:
         api = client()
-        api.add_subscription(settings.WHATSAPP_APP_ID, api.create_app_api_key(settings.WHATSAPP_APP_ID), callback,
-                             tag="woodstar-dashboard")
+        # The Universal Token is accepted by the subscription call itself; the one-time key
+        # is only minted on the old partner login.
+        api_key = None if api.uses_universal_token else api.create_app_api_key(settings.WHATSAPP_APP_ID)
+        api.add_subscription(settings.WHATSAPP_APP_ID, api_key, callback, tag="woodstar-dashboard")
     except WhatsAppSendError as exc:
         log.warning("Could not register for incoming messages: %s", exc)
         raise Denied(f"Could not switch replies on: {str(exc)[:200]}") from exc

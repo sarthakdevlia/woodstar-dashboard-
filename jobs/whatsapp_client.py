@@ -9,6 +9,11 @@ what sends messages. Both are cached in memory — fine for the single process t
 One call uses a different host and credential: registering where incoming messages are
 delivered (the Subscription API on api.gupshup.io) wants an app-level API key, which the
 partner API mints on demand and returns exactly once.
+
+Gupshup retires all three on 1 Apr 2027. With settings.GUPSHUP_UNIVERSAL_TOKEN set, every
+call sends `Authorization: Bearer <token>` instead and none of them is fetched — the same
+switch as the platform's client, proven there against a real send on 14 Oct 2026
+(AI-SaaS docs/GUPSHUP_AUTH_MIGRATION.md).
 """
 
 import json
@@ -44,7 +49,22 @@ class WhatsAppClient:
         self.base_url = settings.WHATSAPP_API_BASE_URL.rstrip("/")
         self.email = settings.WHATSAPP_PARTNER_EMAIL
         self.secret = settings.WHATSAPP_PARTNER_SECRET
+        self.universal_token = settings.GUPSHUP_UNIVERSAL_TOKEN
         self.timeout = timeout
+
+    @property
+    def uses_universal_token(self):
+        return bool(self.universal_token)
+
+    def _app_authorization(self, app_id):
+        if self.uses_universal_token:
+            return f"Bearer {self.universal_token}"
+        return self._get_app_token(app_id)
+
+    def _partner_authorization(self):
+        if self.uses_universal_token:
+            return f"Bearer {self.universal_token}"
+        return self._get_partner_token()
 
     # ------------------------------------------------------------ sending
 
@@ -66,7 +86,7 @@ class WhatsAppClient:
         return self._send(app_id, {"to": to, "type": "template", "template": template}, "Template")
 
     def _send(self, app_id, message, what):
-        token = self._get_app_token(app_id)
+        token = self._app_authorization(app_id)
         url = f"{self.base_url}/partner/app/{app_id}/v3/message"
         payload = {"messaging_product": "whatsapp", "recipient_type": "individual", **message}
         headers = {"Authorization": token, "Content-Type": "application/json"}
@@ -91,7 +111,7 @@ class WhatsAppClient:
     def create_template(self, app_id, element_name, language_code, content, example, vertical="Order update"):
         """Submit a text template for Meta's approval. Returns `(provider_id, status)`;
         the status is PENDING until Meta decides."""
-        token = self._get_app_token(app_id)
+        token = self._app_authorization(app_id)
         data = {
             "elementName": element_name,
             "languageCode": language_code,
@@ -119,7 +139,7 @@ class WhatsAppClient:
     def list_templates(self, app_id):
         """Every template on this WhatsApp number, each a dict with at least elementName,
         status and (when rejected) reason."""
-        token = self._get_app_token(app_id)
+        token = self._app_authorization(app_id)
         try:
             response = requests.get(f"{self.base_url}/partner/app/{app_id}/templates",
                                     headers={"Authorization": token}, timeout=self.timeout)
@@ -134,10 +154,10 @@ class WhatsAppClient:
     def create_app_api_key(self, app_id):
         """Mint the app-level API key the Subscription API requires. The value is returned
         only this once, so it is used straight away and never stored."""
-        partner_token = self._get_partner_token()
         try:
             response = requests.post(f"{self.base_url}/partner/app/{app_id}/apikey",
-                                     headers={"Authorization": partner_token}, timeout=self.timeout)
+                                     headers={"Authorization": self._partner_authorization()},
+                                     timeout=self.timeout)
         except requests.RequestException as exc:
             raise WhatsAppSendError(f"App API key creation failed: {_unreachable(exc)}") from exc
         if not response.ok:
@@ -158,7 +178,14 @@ class WhatsAppClient:
         """
         data = {"url": callback_url, "tag": tag, "version": "3", "modes": "MESSAGE", "doCheck": "false",
                 "meta": json.dumps({WEBHOOK_SECRET_HEADER: settings.WHATSAPP_WEBHOOK_SECRET})}
-        headers = {"apikey": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+        # With the Universal Token there is no key: the subscription takes the token itself.
+        if api_key:
+            auth = {"apikey": api_key}
+        elif self.uses_universal_token:
+            auth = {"Authorization": f"Bearer {self.universal_token}"}
+        else:
+            raise WhatsAppSendError("Subscription needs an app API key or the Universal Token.")
+        headers = {**auth, "Content-Type": "application/x-www-form-urlencoded"}
         try:
             response = requests.post(f"{SUBSCRIPTION_API}/wa/app/{app_id}/subscription", data=data,
                                      headers=headers, timeout=self.timeout)

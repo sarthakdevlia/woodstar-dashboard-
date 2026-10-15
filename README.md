@@ -113,6 +113,7 @@ workspace of WoodStar's own.
    | `PYTHON_VERSION` | `3.12.10` |
    | `FIRST_JOB_NUMBER` | optional; the first order's number (default `1001`) |
    | `WHATSAPP_PARTNER_EMAIL` / `WHATSAPP_PARTNER_SECRET` | the Gupshup partner login, same values as on `sdventures-api` |
+   | `GUPSHUP_UNIVERSAL_TOKEN` | optional; the same Universal Token as on `sdventures-api`. When set, every Gupshup call uses it instead of the partner login, which Gupshup retires on 1 Apr 2027. It lasts at most 60 days, so it is replaced on both services together |
    | `WHATSAPP_APP_ID` | the Gupshup app ID of WoodStar's WhatsApp number |
    | `PLATFORM_EMAIL` / `PLATFORM_PASSWORD` | a login of the shop's own on the SD Ventures platform; switches on *Customer chats* |
    | `PLATFORM_URL` | optional; the platform's address (default `https://www.sdventure.in`) |

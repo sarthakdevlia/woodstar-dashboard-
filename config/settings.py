@@ -149,15 +149,21 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
 
 # WhatsApp, through SD Ventures' Gupshup partner account (the same one the clinic side uses).
-# WHATSAPP_APP_ID is the Gupshup app of WoodStar's own number. With any of these four missing,
-# nothing is sent and the buttons open WhatsApp on the phone instead.
+# WHATSAPP_APP_ID is the Gupshup app of WoodStar's own number. Without it, or without a way to
+# log in to Gupshup, nothing is sent and the buttons open WhatsApp on the phone instead.
 WHATSAPP_API_BASE_URL = os.environ.get("WHATSAPP_API_BASE_URL", "https://partner.gupshup.io")
 WHATSAPP_PARTNER_EMAIL = os.environ.get("WHATSAPP_PARTNER_EMAIL", "")
 WHATSAPP_PARTNER_SECRET = os.environ.get("WHATSAPP_PARTNER_SECRET", "")
 WHATSAPP_APP_ID = os.environ.get("WHATSAPP_APP_ID", "")
+# Gupshup retires the partner login above on 1 Apr 2027. With a Universal Token set (the same
+# one as on sdventures-api; Partner Portal -> Settings -> Security, at most 60 days) every call
+# uses it instead, and the login is never made. Empty keeps the partner login.
+GUPSHUP_UNIVERSAL_TOKEN = os.environ.get("GUPSHUP_UNIVERSAL_TOKEN", "").strip()
 # Gupshup replays this as a header on every incoming message; the webhook refuses anything without it.
 WHATSAPP_WEBHOOK_SECRET = os.environ.get("WHATSAPP_WEBHOOK_SECRET", "")
-WHATSAPP_READY = all([WHATSAPP_PARTNER_EMAIL, WHATSAPP_PARTNER_SECRET, WHATSAPP_APP_ID])
+WHATSAPP_READY = bool(WHATSAPP_APP_ID) and bool(
+    GUPSHUP_UNIVERSAL_TOKEN or (WHATSAPP_PARTNER_EMAIL and WHATSAPP_PARTNER_SECRET)
+)
 # When the shop's number is answered by the SD Ventures assistant, that assistant asks this
 # dashboard where a customer's order is (/hooks/order-status/) and sends this secret with the
 # question. Same value on both sides. Empty: the address refuses everyone.

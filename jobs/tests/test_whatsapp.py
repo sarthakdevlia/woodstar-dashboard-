@@ -19,6 +19,8 @@ ON = dict(WHATSAPP_READY=True, WHATSAPP_APP_ID="app-1", WHATSAPP_WEBHOOK_SECRET=
 class FakeGupshup:
     """Stands in for Gupshup: records what it was asked to do."""
 
+    uses_universal_token = False
+
     def __init__(self):
         self.sent, self.submitted, self.listed, self.subscriptions, self.fail = [], [], [], [], None
 
