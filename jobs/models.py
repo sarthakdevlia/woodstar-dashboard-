@@ -49,7 +49,50 @@ class Job(models.Model):
         return f"{self.code} {self.customer_name}"
 
 
+class Supplier(models.Model):
+    """Someone WoodStar buys from. Kept by name so a purchase still reads after an edit."""
+
+    name = models.CharField(max_length=80)
+    # 10-digit mobile, for the WhatsApp button; optional.
+    phone = models.CharField(max_length=10, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "suppliers"
+        ordering = ["name"]
+
+
+class Purchase(models.Model):
+    """Material ordered from one supplier for one or more customer orders' items. It is
+    ordered, then received; a purchase still waiting can be cancelled (deleted), which puts
+    its items back on the to-order list."""
+
+    ORDERED, RECEIVED = "ordered", "received"
+    STATUS_CHOICES = [(ORDERED, "Ordered"), (RECEIVED, "Received")]
+
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="purchases")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=ORDERED)
+    expected = models.DateField(null=True, blank=True)
+    note = models.CharField(max_length=300, blank=True)
+    created_by_name = models.CharField(max_length=80)
+    created_at = models.DateTimeField(default=timezone.now)
+    received_by_name = models.CharField(max_length=80, blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "purchases"
+        ordering = ["-created_at", "-id"]
+
+    @property
+    def code(self):
+        return f"PO-{self.id}"
+
+
 class JobItem(models.Model):
+    # Where the item comes from: not decided yet, already in the godown, or bought from a supplier.
+    UNCHECKED, STOCK, SUPPLIER = "", "stock", "supplier"
+    SOURCE_CHOICES = [(UNCHECKED, "Not checked"), (STOCK, "In stock"), (SUPPLIER, "From a supplier")]
+
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="items")
     category = models.CharField(max_length=20, choices=[(c["key"], c["label"]) for c in CATEGORIES])
     brand = models.CharField(max_length=60, blank=True)
@@ -58,6 +101,9 @@ class JobItem(models.Model):
     pack = models.CharField(max_length=60, blank=True)
     qty = models.PositiveIntegerField()
     position = models.PositiveSmallIntegerField(default=0)
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default=UNCHECKED, blank=True)
+    # The purchase bringing it in, once one has been placed. Only for items from a supplier.
+    purchase = models.ForeignKey(Purchase, null=True, blank=True, on_delete=models.SET_NULL, related_name="items")
 
     class Meta:
         db_table = "job_items"
@@ -82,7 +128,9 @@ class AuditEntry(models.Model):
     CREATED, EDITED, TICKED, REVERSED = "created", "edited", "ticked", "reversed"
     # A WhatsApp message to the customer went out, or could not; `detail` says which and why.
     MESSAGED, MESSAGE_FAILED = "messaged", "message_failed"
-    ACTION_CHOICES = [(a, a) for a in (CREATED, EDITED, TICKED, REVERSED, MESSAGED, MESSAGE_FAILED)]
+    # Material for one of its items: marked in stock, ordered from a supplier, received… `detail` says what.
+    MATERIAL = "material"
+    ACTION_CHOICES = [(a, a) for a in (CREATED, EDITED, TICKED, REVERSED, MESSAGED, MESSAGE_FAILED, MATERIAL)]
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="audit")
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)

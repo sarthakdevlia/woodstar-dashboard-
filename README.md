@@ -27,8 +27,20 @@ Django app with staff logins. Built on the same pattern as the Delta Designs wor
 - Only the owner undoes a step (latest first), sets duties, manages accounts, changes message wording,
   and sees or edits order value and payments. Money is never sent to a worker's browser.
 - Every change to an order is written to its audit trail.
+- Material (*Material ordered* menu, `jobs/material.py`) is handled by the owner and by whoever is on
+  *Order received*, *Material ordered* or *Material received* that day. It never ticks an order's steps.
 - Five failed sign-ins lock that username out for 15 minutes.
 - The customer's link (`/t/<token>/`) needs no login, shows only that order, and is not guessable.
+
+## Material ordered
+
+Each item on an order is **not checked**, **in stock**, or **from a supplier** (set on the New order
+form, on the order, or under *Check stock*). Items from a supplier wait under *To order* until they
+are ticked onto a **purchase** (`PO-<n>`) with one supplier, an optional expected date and a note.
+A purchase is *ordered*, then *received*; one still waiting can be cancelled, which puts its items
+back on the list. "Send order" / "Send reminder" open WhatsApp on the phone with the item list
+written — no customer names, nothing sent from the shop's number, no template needed. Received
+purchases stay on the screen for two weeks. Stock counts are not kept: "in stock" is yes or no.
 
 ## WhatsApp
 
@@ -100,7 +112,8 @@ workspace of WoodStar's own.
 2. **Web service** — New → Web Service → this repo, branch `main`:
    - Runtime: Python · same region as the database · Health check path: `/healthz`
    - Build command: `pip install -r requirements.txt && python manage.py collectstatic --noinput`
-   - Start command: `python manage.py ensure_database && python manage.py migrate --noinput && python manage.py bootstrap_owner && gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile -`
+   - Start command: `python manage.py boot && gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile -`
+     (`boot` is `ensure_database`, `migrate` and `bootstrap_owner` in one process: on the free plan every wake from sleep runs this again, and loading Django once instead of three times shortens it.)
    - One worker on purpose: the login lockout counter lives in memory.
 3. **Environment variables**
 

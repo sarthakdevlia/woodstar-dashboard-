@@ -138,7 +138,8 @@ class ChatTests(ApiTestCase):
 class OtherItemTests(ApiTestCase):
     def test_an_item_outside_the_lists_is_named_by_hand(self):
         job = self.new_job(items=[{"category": "other", "brand": "Door hinges", "size": "4 inch, steel", "qty": 20}])
-        self.assertEqual(job["items"], [{"cat": "other", "qty": 20, "brand": "Door hinges", "size": "4 inch, steel"}])
+        self.assertEqual(job["items"], [{"id": job["items"][0]["id"], "cat": "other", "qty": 20, "source": "", "purchase": None,
+                                         "brand": "Door hinges", "size": "4 inch, steel"}])
         self.assertContains(self.client.get(job["track"]), "Door hinges · 4 inch, steel × 20 pcs")
         self.assertNotContains(self.client.get(job["track"]), "Other:")
 

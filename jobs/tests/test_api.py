@@ -86,7 +86,8 @@ class JobCardTests(ApiTestCase):
         self.assertIsNone(job["stages"]["ordered"])
         self.assertEqual(job["amount"], 118400)
         # only the details that category asks for are kept
-        self.assertEqual(job["items"][0], {"cat": "ply", "qty": 24, "brand": "Austin Marine", "thickness": "19 mm", "size": "8 × 4 ft"})
+        self.assertEqual(job["items"][0], {"id": job["items"][0]["id"], "cat": "ply", "qty": 24, "source": "", "purchase": None,
+                                           "brand": "Austin Marine", "thickness": "19 mm", "size": "8 × 4 ft"})
         self.assertEqual(self.new_job()["no"], "WS-1002")
 
     def test_counter_worker_creates_cards_but_cannot_set_money(self):

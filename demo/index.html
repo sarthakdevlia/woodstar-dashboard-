@@ -523,7 +523,7 @@ function viewNew(){
   <div class="card sec" style="margin-top:16px"><div class="form">
     <label class="f">Customer name *<input id="f-name" value="${esc(d.name)}" placeholder="e.g. Rajesh Meena" autocomplete="off"><span class="err" id="e-name"></span></label>
     <label class="f">Phone (WhatsApp) *<input id="f-phone" value="${esc(d.phone)}" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number"><span class="err" id="e-phone"></span></label>
-    <label class="f">Site / purpose<input id="f-site" value="${esc(d.site)}" placeholder="e.g. Kunhadi — kitchen"></label>
+    <label class="f">Site<input id="f-site" value="${esc(d.site)}" placeholder="e.g. Kunhadi"></label>
     <label class="f">Carpenter / reference<input id="f-contractor" value="${esc(d.contractor)}" placeholder="optional"></label>
     <label class="f">Pickup or delivery<select id="f-mode">${['Pickup', 'Delivery'].map(m => `<option ${m === d.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
     <label class="f">Promised date<input type="date" id="f-due" value="${esc(d.due)}"></label>

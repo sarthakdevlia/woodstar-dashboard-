@@ -38,3 +38,16 @@ def check_create(is_owner, duties):
     if is_owner or STAGE_KEYS[0] in duties:
         return None
     return f'Orders are created by whoever has "{STAGE_LABELS[STAGE_KEYS[0]]}" as their duty today, or by the owner.'
+
+
+# Material is handled by the counter (who knows what is in the godown when the order is
+# taken), whoever orders from suppliers, and whoever receives what arrives.
+MATERIAL_STEPS = ("received", "ordered", "arrived")
+
+
+def check_material(is_owner, duties):
+    """Marking items in stock, placing purchases with suppliers and receiving them."""
+    if is_owner or any(step in duties for step in MATERIAL_STEPS):
+        return None
+    names = ", ".join(f'"{STAGE_LABELS[s]}"' for s in MATERIAL_STEPS)
+    return f"Material is handled by the owner, or by whoever has {names} as a duty today."

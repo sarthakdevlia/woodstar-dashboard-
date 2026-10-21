@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .catalog import CATEGORY_BY_KEY, CATEGORY_KEYS
-from .models import Job
+from .models import Job, JobItem
 from .services import audit_text
 from .stages import LANG_CHOICES, ROLE_CHOICES, STAGE_KEYS
 
@@ -18,6 +18,8 @@ class ItemSerializer(serializers.Serializer):
     size = serializers.CharField(max_length=60, required=False, allow_blank=True)
     pack = serializers.CharField(max_length=60, required=False, allow_blank=True)
     qty = serializers.IntegerField(min_value=1, max_value=100000)
+    # Known when the order is taken: already in the godown, or to be bought. Blank: not checked.
+    source = serializers.ChoiceField(choices=[c for c, _ in JobItem.SOURCE_CHOICES], required=False, allow_blank=True)
 
 
 def _named(items):
@@ -65,6 +67,15 @@ def _stamp(dt):
     return timezone.localtime(dt).isoformat()
 
 
+def _purchase_of(item):
+    """The purchase bringing this item in, as the order shows it; None before one is placed."""
+    p = item.purchase
+    if p is None:
+        return None
+    return {"id": p.id, "code": p.code, "supplier": p.supplier.name, "status": p.status,
+            "expected": p.expected.isoformat() if p.expected else None}
+
+
 def job_to_dict(job, user, detail=False):
     ticks = {t.stage: {"by": t.done_by_name, "at": _stamp(t.done_at)} for t in job.ticks.all()}
     data = {
@@ -78,7 +89,7 @@ def job_to_dict(job, user, detail=False):
         "notes": job.notes,
         "lang": job.lang,
         "items": [
-            {"cat": i.category, "qty": i.qty,
+            {"id": i.id, "cat": i.category, "qty": i.qty, "source": i.source, "purchase": _purchase_of(i),
              **{f: getattr(i, f) for f in CATEGORY_BY_KEY[i.category]["fields"] if f != "qty"}}
             for i in job.items.all()
         ],
@@ -107,6 +118,22 @@ class SentSerializer(serializers.Serializer):
 
 class MessageSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=["thanks", "update"])
+
+
+class SourceSerializer(serializers.Serializer):
+    source = serializers.ChoiceField(choices=[c for c, _ in JobItem.SOURCE_CHOICES], allow_blank=True)
+
+
+class SupplierSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=80, trim_whitespace=True)
+    phone = serializers.RegexField(PHONE, error_messages=PHONE_ERROR, required=False, allow_blank=True, default="")
+
+
+class PurchaseSerializer(serializers.Serializer):
+    supplier_id = serializers.IntegerField(min_value=1)
+    item_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), min_length=1, max_length=100)
+    expected = serializers.DateField(required=False, allow_null=True, default=None)
+    note = serializers.CharField(max_length=300, required=False, allow_blank=True, default="", trim_whitespace=True)
 
 
 class ReplySerializer(serializers.Serializer):

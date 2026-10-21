@@ -125,7 +125,7 @@ def _clean_item(raw, position):
     """Keep only the details that category asks for."""
     fields = CATEGORY_BY_KEY[raw["category"]]["fields"]
     return JobItem(
-        category=raw["category"], qty=raw["qty"], position=position,
+        category=raw["category"], qty=raw["qty"], position=position, source=raw.get("source") or JobItem.UNCHECKED,
         **{f: (raw.get(f) or "").strip() for f in ("brand", "thickness", "size", "pack") if f in fields},
     )
 
@@ -200,6 +200,7 @@ def audit_text(entry):
         AuditEntry.REVERSED: f"undid {stage}",
         AuditEntry.MESSAGED: f"sent {entry.detail} on WhatsApp",
         AuditEntry.MESSAGE_FAILED: f"could not send {entry.detail}",
+        AuditEntry.MATERIAL: entry.detail,
     }[entry.action]
 
 

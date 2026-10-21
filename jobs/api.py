@@ -8,15 +8,15 @@ from rest_framework.decorators import api_view
 from staff import services as staff_services
 from staff.models import User
 
-from . import chats, services, whatsapp
+from . import chats, material, services, whatsapp
 from .catalog import TEMPLATE_DEFAULTS
 from .models import Job, StageTick
 from .permissions import check_chats
 from .responses import fail, ok
 from .serializers import (
-    DutySerializer, JobCreateSerializer, JobUpdateSerializer, MessageSerializer, ReplySerializer, SentSerializer,
-    StaffCreateSerializer, StaffUpdateSerializer, WordingSerializer, job_to_dict, me_to_dict, staff_to_dict,
-    worker_to_dict,
+    DutySerializer, JobCreateSerializer, JobUpdateSerializer, MessageSerializer, PurchaseSerializer, ReplySerializer,
+    SentSerializer, SourceSerializer, StaffCreateSerializer, StaffUpdateSerializer, SupplierSerializer,
+    WordingSerializer, job_to_dict, me_to_dict, staff_to_dict, worker_to_dict,
 )
 from .stages import STAGE_KEYS, WORKER
 
@@ -33,7 +33,7 @@ def _validated(serializer_class, data, **kwargs):
 
 
 def _job_detail(request, number):
-    job = Job.objects.prefetch_related("ticks", "items").get(number=number)
+    job = Job.objects.prefetch_related("ticks", "items__purchase__supplier").get(number=number)
     return job_to_dict(job, request.user, detail=True)
 
 
@@ -51,7 +51,7 @@ def _team():
 
 
 def _jobs(request):
-    qs = Job.objects.prefetch_related("ticks", "items")
+    qs = Job.objects.prefetch_related("ticks", "items__purchase__supplier")
     if request.query_params.get("scope") != "all":
         cutoff = timezone.now() - timedelta(days=DELIVERED_VISIBLE_DAYS)
         old = StageTick.objects.filter(job=OuterRef("pk"), stage=STAGE_KEYS[-1], done_at__lt=cutoff)
@@ -67,7 +67,7 @@ def state(request):
     me["duties"] = services.duties_of(request.user)
     return ok({"me": me, **_team(), "templates": services.wordings(), "whatsapp": whatsapp.status_view(),
                "chats": {"ready": chats.ready(), "allowed": check_chats(request.user.is_owner, me["duties"]) is None},
-               "jobs": _jobs(request)})
+               "material": material.state(request.user), "jobs": _jobs(request)})
 
 
 @api_view(["POST"])
@@ -106,6 +106,48 @@ def job_message(request, number):
     job = Job.objects.prefetch_related("ticks").get(number=number)
     what = whatsapp.send_to_customer(job, kind, actor=request.user)
     return ok(_job_detail(request, number), f"Sent {what} to {job.customer_name}.")
+
+
+@api_view(["PUT"])
+def item_source(request, item_id):
+    """Mark one item of an order in stock, from a supplier, or not checked."""
+    source = _validated(SourceSerializer, request.data)["source"]
+    number = material.set_source(request.user, item_id, source)
+    return ok(_job_detail(request, number))
+
+
+@api_view(["POST"])
+def suppliers(request):
+    data = _validated(SupplierSerializer, request.data)
+    supplier = material.save_supplier(request.user, data["name"], data["phone"])
+    return ok(material.state(request.user), f"{supplier.name} added.", status.HTTP_201_CREATED)
+
+
+@api_view(["PATCH"])
+def supplier(request, supplier_id):
+    data = _validated(SupplierSerializer, request.data)
+    material.save_supplier(request.user, data["name"], data["phone"], supplier_id)
+    return ok(material.state(request.user), "Saved.")
+
+
+@api_view(["POST"])
+def purchases(request):
+    data = _validated(PurchaseSerializer, request.data)
+    purchase = material.place(request.user, data["supplier_id"], data["item_ids"], data["expected"], data["note"])
+    return ok({**material.state(request.user), "placed": purchase.id},
+              f"{purchase.code} placed with {purchase.supplier.name}.", status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+def purchase_received(request, purchase_id):
+    purchase = material.receive(request.user, purchase_id)
+    return ok(material.state(request.user), f"{purchase.code} received.")
+
+
+@api_view(["DELETE"])
+def purchase(request, purchase_id):
+    material.cancel(request.user, purchase_id)
+    return ok(material.state(request.user), "Purchase cancelled.")
 
 
 @api_view(["PUT"])

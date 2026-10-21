@@ -13,7 +13,7 @@ const FIELD_LABEL = {brand:'Brand', thickness:'Thickness', size:'Size', pack:'Pa
 const REFRESH_MS = 25000;                  // how often the page checks for other people's ticks
 
 let ME = Object.assign({duties:[]}, BOOT.me);
-let DB = {jobs:[], workers:[], roster:{}, sent:{}, templates:{}, whatsapp:null, chats:null, staff:null};
+let DB = {jobs:[], workers:[], roster:{}, sent:{}, templates:{}, whatsapp:null, chats:null, material:null, staff:null};
 let loaded = false;
 
 /* ================================================================
@@ -45,7 +45,7 @@ function takeJob(j){ const i = DB.jobs.findIndex(x => x.no === j.no); if (i < 0)
 async function refresh(quiet){
   try {
     const s = await api('GET', 'state/' + (state.all ? '?scope=all' : ''));
-    ME = s.me; DB.jobs = s.jobs; DB.templates = s.templates; DB.whatsapp = s.whatsapp; DB.chats = s.chats; takeTeam(s); loaded = true;
+    ME = s.me; DB.jobs = s.jobs; DB.templates = s.templates; DB.whatsapp = s.whatsapp; DB.chats = s.chats; DB.material = s.material; takeTeam(s); loaded = true;
     // don't redraw under someone who is typing
     const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.id !== 'q';
     if (!quiet || (!typing && state.view !== 'chats')) render();          // the chat screen repaints itself, piece by piece
@@ -82,7 +82,7 @@ const trackUrl = j => location.origin + j.track;
 const fill = (text, values) => text.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
 
 /* who is signed in, and what they may tick today */
-const state = {view:'board', job:null, detail:null, q:'', all:false, draft:null, lastCat:'ply', tplLang:{work:'en', thanks:'en', update:'en'}, tplDraft:{}};
+const state = {view:'board', job:null, detail:null, q:'', all:false, draft:null, lastCat:'ply', tplLang:{work:'en', thanks:'en', update:'en'}, tplDraft:{}, matTab:'check', picked:{}, placed:null};
 const isOwner = () => ME.is_owner;
 const duties = id => DB.roster[id] || [];
 const myDuties = () => ME.duties || [];
@@ -137,12 +137,13 @@ async function toggle(j, key){
    Views
 ================================================================= */
 const VIEWS = [
-  {k:'board', t:'Floor board'}, {k:'list', t:'All orders'}, {k:'new', t:'+ New order'}, {k:'team', t:"Today's team"},
+  {k:'board', t:'Floor board'}, {k:'list', t:'All orders'}, {k:'new', t:'+ New order'}, {k:'material', t:'Material ordered', material:true}, {k:'team', t:"Today's team"},
   {k:'chats', t:'Customer chats', chats:true}, {k:'messages', t:'WhatsApp messages', owner:true}, {k:'staff', t:'Staff & logins', owner:true},
 ];
 function nav(){
   const fresh = chat.list ? chat.list.filter(isNew).length : 0;
-  $('#nav').innerHTML = VIEWS.filter(v => (!v.owner || isOwner()) && (!v.chats || chatsAllowed())).map(v => `<button data-view="${v.k}" class="${state.view === v.k || (v.k === 'list' && state.view === 'job') ? 'on' : ''}">${v.t}${v.chats && fresh ? ` <span class="pill ok">${fresh}</span>` : ''}</button>`).join('');
+  const toOrder = materialAllowed() ? openJobs().reduce((n, j) => n + j.items.filter(i => !i.purchase && i.source !== 'stock').length, 0) : 0;
+  $('#nav').innerHTML = VIEWS.filter(v => (!v.owner || isOwner()) && (!v.chats || chatsAllowed()) && (!v.material || materialAllowed())).map(v => `<button data-view="${v.k}" class="${state.view === v.k || (v.k === 'list' && state.view === 'job') ? 'on' : ''}">${v.t}${v.chats && fresh ? ` <span class="pill ok">${fresh}</span>` : ''}${v.material && toOrder ? ` <span class="pill warn" title="Items not yet in stock or ordered">${toOrder}</span>` : ''}</button>`).join('');
   $('#who-duty').textContent = isOwner() ? 'Owner' : (myDuties().map(k => stage(k).label).join(' + ') || 'no duty today');
 }
 function go(view, job){
@@ -305,13 +306,15 @@ function viewJob(){
       <div class="who">${d ? `✓ ${esc(d.by)}<br>${when(d.at)}` : next && next.key === s.key ? 'Waiting for this step' : '—'}</div>
       <button class="btn btn--sm ${d ? '' : 'btn--dark'}" data-tick="${s.key}" ${v.ok ? '' : 'disabled'} title="${esc(v.ok ? '' : v.msg)}">${d ? 'Undo' : 'Mark done'}</button></div>`;
   }).join('');
-  const rows = j.items.map(i => { const c = cat(i.cat); return `<tr><td>${c.label}</td><td>${esc(i.brand || '—')}</td><td>${esc(i.thickness || '—')}</td><td>${esc(i.size || i.pack || '—')}</td><td class="mono"><b>${i.qty}</b> ${c.unit}</td></tr>`; }).join('');
+  const rows = j.items.map(i => { const c = cat(i.cat), [tone, said] = itemState(i);
+    const marks = materialAllowed() && !i.purchase ? `<span class="srcbtns">${SOURCES.filter(([k]) => k && k !== i.source).map(([k, t]) => `<button class="btn btn--sm" data-src="${i.id}:${k}">${t}</button>`).join('')}</span>` : '';
+    return `<tr><td>${c.label}</td><td>${esc(i.brand || '—')}</td><td>${esc(i.thickness || '—')}</td><td>${esc(i.size || i.pack || '—')}</td><td class="mono"><b>${i.qty}</b> ${c.unit}</td><td><span class="pill ${tone}">${esc(said)}</span>${marks}</td></tr>`; }).join('');
   return `<div class="row between"><div><p class="tag" style="margin:0"><a href="#list" data-view="list" style="text-decoration:none">← All orders</a></p>
       <h1 class="h1">${j.no} · ${esc(j.customer.name)}</h1><p class="sub">Received ${when(j.createdAt)} · ${esc(j.mode)} · promised ${new Date(j.due).toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'})}</p></div>
     <div class="row">${waButton(j)}<button class="btn" data-print="${j.no}">Print order</button><a class="btn" href="${esc(j.track)}" target="_blank" rel="noopener">See what the customer sees</a></div></div>
   <div class="card sec" style="margin-top:16px"><div class="row between" style="margin-bottom:12px"><b>Process</b><span class="muted" style="font-size:12.5px">Each step is ticked by whoever has that duty today, in order. The customer's tracking page follows every tick.</span></div><div class="stages">${tiles}</div></div>
   <div class="detail">
-    <div class="card"><div class="sec"><b>Items</b></div><div style="overflow-x:auto"><table class="items"><thead><tr><th>Category</th><th>Brand</th><th>Thickness</th><th>Size / pack</th><th>Quantity</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card"><div class="sec row between"><b>Items</b><span class="muted" style="font-size:12.5px">Material: ${esc(materialSummary(j))}${materialAllowed() ? ' · <a href="#material" data-view="material">Material ordered</a>' : ''}</span></div><div style="overflow-x:auto"><table class="items"><thead><tr><th>Category</th><th>Brand</th><th>Thickness</th><th>Size / pack</th><th>Quantity</th><th>Material</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${j.notes ? `<div class="sec"><span class="tag">Notes</span><p style="margin:6px 0 0">${esc(j.notes)}</p></div>` : ''}
       <div class="sec"><span class="tag">What the customer is sent</span><div class="bubble">${esc(customerMessage(j))}<small>WhatsApp · order update · ${j.lang === 'hi' ? 'Hindi' : 'English'}</small></div>
         ${waReady() ? `<p class="muted" style="font-size:12.5px;margin:10px 0 0">Goes from the shop's WhatsApp number when you press the green button. Nothing is sent by itself except the thank-you when the order is saved.</p>
@@ -338,12 +341,13 @@ function viewNew(){
         : `<label>${fieldLabel(c, f)}<input list="dl-${c.key}-${f}" data-f="${f}" value="${esc(it[f] || '')}" placeholder="${(c[f] || []).length ? 'Choose or type' : 'Type it in'}" maxlength="60"><datalist id="dl-${c.key}-${f}">${(c[f] || []).map(b => `<option value="${esc(b)}">`).join('')}</datalist></label>`
       ).join('')}
       ${'<span></span>'.repeat(Math.max(0, 4 - c.fields.length))}
+      <label>Material<select data-f="source">${SOURCES.map(([k, t]) => `<option value="${k}" ${k === (it.source || '') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       <button class="x" data-remove="${i}" title="Remove this item">×</button></div>`; }).join('');
   return `<div class="row between"><div><h1 class="h1">New order</h1><p class="sub">Fill in the customer, add what they're buying, save — the order goes onto the floor board as "Order received".</p></div></div>
   <div class="card sec" style="margin-top:16px"><div class="form">
     <label class="f">Customer name *<input id="f-name" value="${esc(d.name)}" placeholder="e.g. Rajesh Meena" autocomplete="off" maxlength="120"><span class="err" id="e-name"></span></label>
     <label class="f">Phone (WhatsApp) *<input id="f-phone" value="${esc(d.phone)}" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number"><span class="err" id="e-phone"></span></label>
-    <label class="f">Site / purpose<input id="f-site" value="${esc(d.site)}" placeholder="e.g. Kunhadi — kitchen" maxlength="120"></label>
+    <label class="f">Site<input id="f-site" value="${esc(d.site)}" placeholder="e.g. Kunhadi" maxlength="120"></label>
     <label class="f">Carpenter / reference<input id="f-contractor" value="${esc(d.contractor)}" placeholder="optional" maxlength="80"></label>
     <label class="f">Pickup or delivery<select id="f-mode">${['Pickup', 'Delivery'].map(m => `<option ${m === d.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
     <label class="f">Promised date<input type="date" id="f-due" value="${esc(d.due)}"><span class="err" id="e-due"></span></label>
@@ -378,7 +382,7 @@ async function createJob(btn){
     : d.items.some(i => i.cat === 'other' && !(i.brand || '').trim()) ? 'Give every "Other" item a name.' : '');
   if (bad) return toast('Check the highlighted fields.', true);
   const body = {customer_name:d.name.trim(), customer_phone:d.phone.trim(), site:d.site.trim(), contractor:d.contractor.trim(), mode:d.mode, lang:d.lang, due:d.due, notes:d.notes.trim(),
-    items:d.items.map(i => { const o = {category:i.cat}; cat(i.cat).fields.forEach(f => o[f] = f === 'qty' ? Math.round(+i.qty) : (i[f] || '').trim()); return o; })};
+    items:d.items.map(i => { const o = {category:i.cat, source:i.source || ''}; cat(i.cat).fields.forEach(f => o[f] = f === 'qty' ? Math.round(+i.qty) : (i[f] || '').trim()); return o; })};
   if (isOwner()) { body.amount = +d.amount || 0; body.advance = +d.advance || 0; }
   btn.disabled = true;
   try {
@@ -388,6 +392,90 @@ async function createJob(btn){
     toast(th.sent ? `${j.no} created — thank-you sent to ${j.customer.name} on WhatsApp` : waReady() ? `${j.no} created. Thank-you not sent: ${th.reason}` : `${j.no} created — send the customer their tracking link`, !th.sent && waReady());
     go('job', j.no);
   } catch (e) { btn.disabled = false; toast(firstError(e), true); }
+}
+
+/* ---- material: what is in the godown, what is bought from suppliers, and those purchases.
+   Ticking "Material ordered" / "Material received" on an order stays the staff's own job. */
+const SOURCES = [['', 'Not checked'], ['stock', 'In stock'], ['supplier', 'From supplier']];
+const materialAllowed = () => !!(DB.material && DB.material.allowed);
+const openJobs = () => DB.jobs.filter(j => !j.stages.delivered);
+function itemLine(i){
+  const c = cat(i.cat), details = c.fields.filter(f => f !== 'qty').map(f => i[f]).filter(Boolean);
+  return `${i.cat === 'other' ? '' : c.label + ': '}${details.join(' · ')} × ${i.qty} ${c.unit}`;
+}
+function itemState(i){
+  const p = i.purchase;
+  if (p) return p.status === 'received' ? ['ok', `Received · ${p.code}`] : ['info', `Ordered · ${p.supplier}${p.expected ? ', due ' + shortDate(p.expected) : ''}`];
+  return i.source === 'stock' ? ['ok', 'In stock'] : i.source === 'supplier' ? ['warn', 'To order'] : ['', 'Not checked'];
+}
+function materialSummary(j){
+  const n = {stock:0, received:0, ordered:0, order:0, unchecked:0};
+  j.items.forEach(i => n[i.purchase ? i.purchase.status : i.source === 'stock' ? 'stock' : i.source === 'supplier' ? 'order' : 'unchecked']++);
+  return [[n.stock, 'in stock'], [n.received, 'received'], [n.ordered, 'ordered'], [n.order, 'to order'], [n.unchecked, 'not checked']]
+    .filter(([c]) => c).map(([c, t]) => `${c} ${t}`).join(' · ');
+}
+/* the purchase as the supplier reads it: no customer names, only what to send */
+function poMessage(p, reminder){
+  const lines = p.items.map((it, n) => `${n + 1}. ${it.line}`).join('\n');
+  return reminder
+    ? `Namaste ${p.supplier.name}, a reminder about our order ${p.code} of ${shortDate(p.created_at)}:\n${lines}\nPlease tell us when it will be delivered. — ${SHOP.name}`
+    : `Namaste ${p.supplier.name},\nOrder from ${SHOP.name} (${p.code}):\n${lines}${p.expected ? `\nPlease deliver by ${new Date(p.expected).toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'})}.` : ''}${p.note ? '\n' + p.note : ''}\nThank you.`;
+}
+const waSupplier = (p, reminder) => `<a class="btn btn--wa btn--sm" href="https://wa.me/91${esc(p.supplier.phone)}?text=${encodeURIComponent(poMessage(p, reminder))}" target="_blank" rel="noopener">${reminder ? 'Send reminder' : 'Send order'} on WhatsApp</a>`;
+const jobHead = j => `<div class="row between"><span><a href="#job/${j.no}" data-open="${j.no}"><b>${j.no}</b></a> ${esc(j.customer.name)}${j.site ? ` <span class="muted">· ${esc(j.site)}</span>` : ''}</span><span class="muted" style="font-size:12.5px">promised ${shortDate(j.due)}</span></div>`;
+const emptyCard = (title, more) => `<div class="card sec" style="margin-top:12px"><b>${title}</b>${more ? `<p class="sub">${more}</p>` : ''}</div>`;
+function poCard(p){
+  const late = p.status === 'ordered' && p.expected && new Date(p.expected) < new Date(new Date().toDateString());
+  return `<div class="card sec po ${state.placed === p.id ? 'fresh' : ''}"><div class="row between"><div><b style="font-size:16px">${p.code} · ${esc(p.supplier.name)}</b>
+      <div class="muted" style="font-size:12.5px">Placed ${when(p.created_at)} by ${esc(p.created_by)}${p.expected ? ` · expected ${shortDate(p.expected)}` : ''}${p.status === 'received' ? ` · received ${when(p.received_at)} by ${esc(p.received_by)}` : ''}${p.supplier.phone ? ' · ' + phoneFmt(p.supplier.phone) : ''}</div></div>
+      ${late ? '<span class="pill bad">Late</span>' : p.status === 'received' ? '<span class="pill ok">Received</span>' : '<span class="pill info">Ordered</span>'}</div>
+    <ul class="worklist">${p.items.map(it => `<li><span>${esc(it.line)}</span><a href="#job/${it.job}" data-open="${it.job}">${it.job}</a></li>`).join('')}</ul>
+    ${p.note ? `<p class="muted" style="margin:8px 0 0;font-size:13px">${esc(p.note)}</p>` : ''}
+    ${p.status === 'ordered' ? `<div class="row" style="margin-top:12px">${p.supplier.phone ? waSupplier(p, false) + waSupplier(p, true) : '<span class="muted" style="font-size:12.5px">Add this supplier\'s number under Suppliers to message them.</span>'}
+      <button class="btn btn--dark btn--sm" data-recv="${p.id}">Mark received</button><button class="btn btn--sm btn--ghost" data-cancelpo="${p.id}">Cancel</button></div>` : ''}</div>`;
+}
+function viewMaterial(){
+  const head = '<h1 class="h1">Material ordered</h1>';
+  if (!materialAllowed()) return `${head}<p class="sub">Material is handled by the owner, or by whoever has "Order received", "Material ordered" or "Material received" as a duty today.</p>`;
+  const M = DB.material, jobs = openJobs();
+  const unchecked = jobs.filter(j => j.items.some(i => !i.purchase && !i.source));
+  const toOrder = jobs.filter(j => j.items.some(i => !i.purchase && i.source === 'supplier'));
+  const ordered = M.purchases.filter(p => p.status === 'ordered'), received = M.purchases.filter(p => p.status === 'received');
+  const count = list => list.length ? ` <span class="pill">${list.length}</span>` : '';
+  const tabs = [['check', 'Check stock', count(unchecked)], ['order', 'To order', count(toOrder)], ['ordered', 'Ordered', count(ordered)], ['received', 'Received', ''], ['suppliers', 'Suppliers', '']];
+  let body;
+  if (state.matTab === 'check') body = `<p class="sub">Items nobody has checked yet. Mark each one in stock, or to be bought from a supplier.</p>
+    ${unchecked.map(j => `<div class="card sec" style="margin-top:12px">${jobHead(j)}<ul class="worklist">${j.items.filter(i => !i.purchase && !i.source).map(i => `<li><span>${esc(itemLine(i))}</span><span class="srcbtns"><button class="btn btn--sm" data-src="${i.id}:stock">In stock</button><button class="btn btn--sm" data-src="${i.id}:supplier">From supplier</button></span></li>`).join('')}</ul></div>`).join('')
+      || emptyCard('Everything is checked.')}`;
+  else if (state.matTab === 'order') body = `<p class="sub">Items to buy, by customer order. Tick the ones going to one supplier, then place the purchase.</p>
+    ${toOrder.map(j => `<div class="card sec" style="margin-top:12px">${jobHead(j)}<ul class="worklist">${j.items.filter(i => !i.purchase && i.source === 'supplier').map(i => `<li><label class="pick"><input type="checkbox" data-pick="${i.id}" ${state.picked[i.id] ? 'checked' : ''}> ${esc(itemLine(i))}</label><button class="btn btn--sm btn--ghost" data-src="${i.id}:stock">In stock after all</button></li>`).join('')}</ul></div>`).join('')
+      || emptyCard('Nothing to order.', 'Items marked "From supplier" appear here until they are on a purchase.')}
+    ${toOrder.length ? `<div class="card sec" style="margin-top:14px"><b>Place a purchase</b>
+      ${M.suppliers.length ? `<div class="form" style="grid-template-columns:repeat(3,1fr);margin-top:12px">
+        <label class="f">Supplier<select id="po-supplier">${M.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+        <label class="f">Expected on (optional)<input type="date" id="po-expected"></label>
+        <label class="f">Note for the supplier (optional)<input id="po-note" maxlength="300" placeholder="e.g. deliver to the godown before 11 am"></label></div>
+        <div class="row" style="margin-top:12px"><button class="btn btn--gold" data-place>Place purchase with the ticked items</button></div>`
+      : '<p class="sub">Add a supplier first, under <a href="#material" data-mattab="suppliers">Suppliers</a>.</p>'}</div>` : ''}`;
+  else if (state.matTab === 'ordered') body = `<p class="sub">Purchases waiting to arrive. Mark one received when the material is in, then tick "Material received" on the orders it was for.</p>
+    ${ordered.map(poCard).join('') || emptyCard('Nothing waiting.')}`;
+  else if (state.matTab === 'received') body = `<p class="sub">Purchases received in the last two weeks.</p>${received.map(poCard).join('') || emptyCard('Nothing received recently.')}`;
+  else body = `<p class="sub">The people WoodStar buys from. A WhatsApp number lets you send them a purchase from your phone.</p>
+    <div class="card" style="margin-top:12px;overflow-x:auto"><table class="staff"><thead><tr><th>Name</th><th>WhatsApp number</th><th></th></tr></thead><tbody>
+      ${M.suppliers.map(s => `<tr><td><input class="in" maxlength="80" value="${esc(s.name)}" data-supname="${s.id}"></td><td><input class="in" style="width:140px" inputmode="numeric" maxlength="10" value="${esc(s.phone)}" placeholder="10-digit number" data-supphone="${s.id}"></td><td><button class="btn btn--sm" data-supsave="${s.id}">Save</button></td></tr>`).join('') || '<tr><td colspan="3" class="muted">No suppliers yet.</td></tr>'}</tbody></table></div>
+    <div class="card sec" style="margin-top:14px"><b>Add a supplier</b><div class="form supadd" style="margin-top:12px">
+      <label class="f">Name<input id="sup-name" maxlength="80" placeholder="e.g. Sharma Traders" autocomplete="off"></label>
+      <label class="f">WhatsApp number (optional)<input id="sup-phone" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number"></label>
+      <button class="btn btn--dark" data-supadd>Add</button></div></div>`;
+  return `${head}<div class="tabs mattabs">${tabs.map(([k, t, c]) => `<button class="${state.matTab === k ? 'on' : ''}" data-mattab="${k}">${t}${c}</button>`).join('')}</div>${body}`;
+}
+async function materialCall(method, path, body, done){
+  try {
+    const r = await api(method, path, body);
+    if (r && r.allowed !== undefined) DB.material = r;
+    if (r && r.no) takeJob(r);
+    toast(done); await refresh(true); return r;
+  } catch (e) { toast(firstError(e), true); }
 }
 
 /* ---- today's team: who does what today, and the message each one gets */
@@ -521,12 +609,12 @@ function render(){
   nav();
   if (!loaded) return;
   const v = state.view;
-  $('#app').innerHTML = v === 'board' ? viewBoard() : v === 'list' ? viewList() : v === 'job' ? viewJob() : v === 'new' ? viewNew() : v === 'team' ? viewTeam() : v === 'chats' ? viewChats() : v === 'messages' ? viewMessages() : viewStaff();
+  $('#app').innerHTML = v === 'board' ? viewBoard() : v === 'list' ? viewList() : v === 'job' ? viewJob() : v === 'new' ? viewNew() : v === 'material' ? viewMaterial() : v === 'team' ? viewTeam() : v === 'chats' ? viewChats() : v === 'messages' ? viewMessages() : viewStaff();
   const m = $('#msgs'); if (m) m.scrollTop = m.scrollHeight;               // a chat opens at its newest message
 }
 function fromHash(){
   const [v, j] = location.hash.replace('#', '').split('/');
-  state.view = ['board', 'list', 'job', 'new', 'team', 'chats', 'messages', 'staff'].includes(v) ? v : 'board';
+  state.view = ['board', 'list', 'job', 'new', 'material', 'team', 'chats', 'messages', 'staff'].includes(v) ? v : 'board';
   state.job = j || null;
   if (state.view === 'job' && state.job) loadJob(state.job);
   if (state.view === 'staff') loadStaff();
@@ -543,16 +631,47 @@ document.addEventListener('input', e => {
   const pill = $(`[data-tplstate="${key}"]`); pill.textContent = e.target.value === saved ? 'Saved' : 'Not saved'; pill.className = 'pill ' + (e.target.value === saved ? 'ok' : 'warn');
 });
 document.addEventListener('change', e => {
+  if (e.target.dataset.pick) { state.picked[e.target.dataset.pick] = e.target.checked; return; }
   const s = e.target.dataset.staff; if (!s) return;
   const [id, field] = s.split(':'), value = e.target.value.trim();
   if (field === 'phone' && value && !/^[6-9]\d{9}$/.test(value)) { toast('Enter a 10-digit mobile number.', true); return; }
   patchStaff(+id, {[field]:value});
 });
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-view],[data-open],[data-tick],[data-add],[data-additem],[data-chat],[data-chatback],[data-chatsend],[data-chatorder],[data-remove],[data-create],[data-clear],[data-print],[data-all],[data-pay],[data-duty],[data-sentone],[data-tpllang],[data-blank],[data-tplsave],[data-tplreset],[data-wasend],[data-wasubmit],[data-warefresh],[data-wareplies],[data-staffadd],[data-staffpass],[data-staffactive]');
+  const t = e.target.closest('[data-view],[data-open],[data-tick],[data-add],[data-additem],[data-chat],[data-chatback],[data-chatsend],[data-chatorder],[data-remove],[data-create],[data-clear],[data-print],[data-all],[data-pay],[data-duty],[data-sentone],[data-tpllang],[data-blank],[data-tplsave],[data-tplreset],[data-wasend],[data-wasubmit],[data-warefresh],[data-wareplies],[data-staffadd],[data-staffpass],[data-staffactive],[data-mattab],[data-src],[data-place],[data-recv],[data-cancelpo],[data-supadd],[data-supsave]');
   if (!t) return;
   const d = t.dataset;
   if (d.view) { e.preventDefault(); readDraft(); return go(d.view); }
+  if (d.mattab) { e.preventDefault(); state.matTab = d.mattab; state.placed = null; return render(); }
+  if (d.src) {
+    const [id, source] = d.src.split(':'); t.disabled = true;
+    await materialCall('PUT', `items/${id}/source/`, {source}, source === 'stock' ? 'Marked in stock.' : 'Marked to order from a supplier.');
+    return render();
+  }
+  if ('place' in d) {
+    const ids = Object.keys(state.picked).filter(k => state.picked[k] && document.querySelector(`[data-pick="${k}"]`)).map(Number);
+    if (!ids.length) return toast('Tick the items going to this supplier.', true);
+    t.disabled = true;
+    const r = await materialCall('POST', 'purchases/', {supplier_id:+$('#po-supplier').value, item_ids:ids, expected:$('#po-expected').value || null, note:$('#po-note').value.trim()}, 'Purchase placed. Send it to the supplier on WhatsApp.');
+    if (r) { state.picked = {}; state.placed = r.placed; state.matTab = 'ordered'; }
+    return render();
+  }
+  if (d.recv) {
+    if (!confirm('Has all of this material arrived? Tick "Material received" on each order yourself when it is ready.')) return;
+    t.disabled = true; await materialCall('POST', `purchases/${d.recv}/received/`, undefined, 'Marked received.'); return render();
+  }
+  if (d.cancelpo) {
+    if (!confirm('Cancel this purchase? Its items go back on the To order list.')) return;
+    t.disabled = true; await materialCall('DELETE', `purchases/${d.cancelpo}/`, undefined, 'Purchase cancelled.'); return render();
+  }
+  if ('supadd' in d || d.supsave) {
+    const name = (d.supsave ? $(`[data-supname="${d.supsave}"]`) : $('#sup-name')).value.trim();
+    const phone = (d.supsave ? $(`[data-supphone="${d.supsave}"]`) : $('#sup-phone')).value.trim();
+    if (!name) return toast('Enter the supplier\'s name.', true);
+    if (phone && !/^[6-9]\d{9}$/.test(phone)) return toast('Enter a 10-digit mobile number.', true);
+    await materialCall(d.supsave ? 'PATCH' : 'POST', d.supsave ? `suppliers/${d.supsave}/` : 'suppliers/', {name, phone}, d.supsave ? 'Saved.' : `${name} added.`);
+    return render();
+  }
   if (d.open) { e.preventDefault(); return go('job', d.open); }
   if (d.tick) return toggle(currentJob(), d.tick);
   if (d.add || 'additem' in d) {                                            // a category button, or "+ Add item" with the kind picked beside it
